@@ -7,10 +7,35 @@ local queue = { }
 local whoRetryAfter = {}
 local lastWhoRequest = 0
 local whoRequestedName = nil
+local whoOutputSuppressName = nil
+local whoOutputSuppressUntil = 0
+local whoOutputLineSuppressed = false
+local WHO_OUTPUT_SUPPRESS_WINDOW = 5
 local WHO_REQUEST_INTERVAL = 10
 local WHO_NAME_RETRY_DELAY = 60
 
 local libunitscan = CreateFrame("Frame", "ShaguTweaksUnitScan", UIParent)
+
+-- Hide only chat output belonging to this addon's automated WHO request.
+-- WHO_LIST_UPDATE is still processed below so the class cache is populated.
+function ShaguTweaks.ShouldSuppressUnitScanWhoMessage(text)
+  if not text or not whoOutputSuppressName or GetTime() > whoOutputSuppressUntil then
+    return false
+  end
+
+  if string.find(text, whoOutputSuppressName, 1, true)
+    and string.find(text, "Level ", 1, true)
+    and string.find(text, " - ", 1, true) then
+    whoOutputLineSuppressed = true
+    return true
+  end
+
+  if whoOutputLineSuppressed and string.find(text, "player total", 1, true) then
+    return true
+  end
+
+  return false
+end
 
 function ShaguTweaks.GetUnitData(name, active)
   if units["players"][name] then
@@ -51,6 +76,9 @@ local function RequestWho(name)
   if now - lastWhoRequest < WHO_REQUEST_INTERVAL then return false end
 
   whoRequestedName = name
+  whoOutputSuppressName = name
+  whoOutputSuppressUntil = now + WHO_OUTPUT_SUPPRESS_WINDOW
+  whoOutputLineSuppressed = false
   lastWhoRequest = now
   DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[UnitScan]|r trying WHO lookup for " .. tostring(name))
   SendWho("n-" .. name)

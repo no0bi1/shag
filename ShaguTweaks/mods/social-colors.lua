@@ -34,6 +34,10 @@ module.enable = function(self)
       if _G["ChatFrame"..i] and not _G["ChatFrame"..i].HookAddMessageColor and not Prat and isCombat < 5 then
         _G["ChatFrame"..i].HookAddMessageColor = _G["ChatFrame"..i].AddMessage
         _G["ChatFrame"..i].AddMessage = function(frame, text, a1, a2, a3, a4, a5)
+          if ShaguTweaks.ShouldSuppressUnitScanWhoMessage and ShaguTweaks.ShouldSuppressUnitScanWhoMessage(text) then
+            return
+          end
+
           if text then
             text = string.gsub(text, "(|Hplayer:([^|]+)|h)(.-)(|h)", function(link, name, display, close)
               local real, _ = strsplit(":", name)

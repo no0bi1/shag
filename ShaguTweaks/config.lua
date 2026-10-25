@@ -150,7 +150,6 @@ settings.load = function(self)
     -- create category title collapse button
     local collapse = function(frame, expand)
       local parent = frame or this.parent
-      if parent and parent.parent and (parent.parent.button == parent or parent.parent.title == parent) then parent = parent.parent end
 
       if expand then
         local height = parent.collapse or parent:GetHeight()
@@ -191,14 +190,14 @@ settings.load = function(self)
     settings.category[category].button:SetWidth(22)
     settings.category[category].button:SetHeight(22)
     settings.category[category].button.parent = settings.category[category]
-    settings.category[category].button:SetScript("OnClick", collapse)
+    settings.category[category].button:SetScript("OnClick", function() collapse(this.parent) end)
 
     settings.category[category].title = settings.category[category].title or CreateFrame("Button", nil, settings.container)
     settings.category[category].title:SetPoint("TOPLEFT", settings.category[category], "TOPLEFT", 22, entrysize-4)
     settings.category[category].title:SetWidth(200)
     settings.category[category].title:SetHeight(entrysize)
     settings.category[category].title.parent = settings.category[category]
-    settings.category[category].title:SetScript("OnClick", collapse)
+    settings.category[category].title:SetScript("OnClick", function() collapse(this.parent) end)
 
     settings.category[category]:SetBackdrop({
       bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",

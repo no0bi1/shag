@@ -176,10 +176,12 @@ settings.load = function(self)
 
         parent.buttons = parent.buttons or {}
         for button in pairs(parent.buttons) do button:Show() end
+        if parent.button then
         parent.button:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
         parent.button:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down")
         parent.button:SetDisabledTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Disabled")
         parent.button:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight")
+        end
         parent:SetAlpha(1)
       end
     end

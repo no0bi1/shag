@@ -161,6 +161,7 @@ settings.load = function(self)
         parent.collapse = height
         parent:SetHeight(1)
 
+        parent.buttons = parent.buttons or {}
         for button in pairs(parent.buttons) do button:Hide() end
         parent.button:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
         parent.button:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
@@ -172,6 +173,7 @@ settings.load = function(self)
         parent.collapse = nil
         parent:SetHeight(height)
 
+        parent.buttons = parent.buttons or {}
         for button in pairs(parent.buttons) do button:Show() end
         parent.button:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
         parent.button:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down")

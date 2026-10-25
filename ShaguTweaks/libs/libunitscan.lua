@@ -5,6 +5,9 @@ local L = ShaguTweaks.L
 local units = { players = {}, mobs = {} }
 local queue = { }
 local scanBlockedLogged = {}
+local lastWhoRequest = 0
+local whoRequestedName = nil
+local WHO_REQUEST_INTERVAL = 10
 
 local libunitscan = CreateFrame("Frame", "ShaguTweaksUnitScan", UIParent)
 
@@ -32,6 +35,20 @@ local function AddData(db, name, class, level, elite)
   units[db][name].elite = elite or units[db][name].elite
   queue[name] = nil
   scanBlockedLogged[name] = nil
+end
+
+local function RequestWho(name)
+  -- Don't replace a WHO query the user is actively viewing.
+  if WhoFrame and WhoFrame.IsShown and WhoFrame:IsShown() then return end
+  if whoRequestedName then return end
+
+  local now = GetTime()
+  if now - lastWhoRequest < WHO_REQUEST_INTERVAL then return end
+
+  whoRequestedName = name
+  lastWhoRequest = now
+  DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[UnitScan]|r trying WHO lookup for " .. tostring(name))
+  SendWho("n-" .. name)
 end
 
 libunitscan:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -94,10 +111,23 @@ libunitscan:SetScript("OnEvent", function()
 
   elseif event == "WHO_LIST_UPDATE" or event == "CHAT_MSG_SYSTEM" then
     local name, class, level, _
+    local matchedRequestedName = false
     for i = 1, GetNumWhoResults() do
       name, _, level, _, class, _ = GetWhoInfo(i)
       class = L["class"][class] or nil
       AddData("players", name, class, level)
+      if whoRequestedName and name and string.lower(name) == string.lower(whoRequestedName) and class then
+        matchedRequestedName = true
+      end
+    end
+
+    if event == "WHO_LIST_UPDATE" and whoRequestedName then
+      if matchedRequestedName then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. whoRequestedName .. ".")
+      else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. whoRequestedName .. ".")
+      end
+      whoRequestedName = nil
     end
 
   elseif event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
@@ -151,7 +181,8 @@ if GetExpansion() == "vanilla" then
       if foundName and foundName == name and isPlayer and foundClass then
         DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r found " .. tostring(name) .. " as player class " .. tostring(foundClass))
       else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r lookup for " .. tostring(name) .. " did not find a matching player (target=" .. tostring(foundName) .. ", isPlayer=" .. tostring(isPlayer) .. ", class=" .. tostring(foundClass) .. ").")
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r target lookup failed for " .. tostring(name) .. "; trying WHO fallback.")
+        RequestWho(name)
       end
       ClearTarget()
 

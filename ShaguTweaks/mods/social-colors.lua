@@ -34,12 +34,11 @@ module.enable = function(self)
         _G["ChatFrame"..i].HookAddMessageColor = _G["ChatFrame"..i].AddMessage
         _G["ChatFrame"..i].AddMessage = function(frame, text, a1, a2, a3, a4, a5)
           if text then
-            local active = string.find(text, "|Hchannel:") ~= nil
             text = string.gsub(text, "(|Hplayer:([^|]+)|h)(.-)(|h)", function(link, name, display, close)
               local real, _ = strsplit(":", name)
               local color = "|cffaaaaaa"
-              -- Channel senders are not always cached yet. Queue a lookup for them.
-              local class = GetUnitData(real, active)
+              -- Queue lookups for any uncached chat sender, regardless of channel hyperlink format.
+              local class = GetUnitData(real, true)
 
               if class and class ~= UNKNOWN and RAID_CLASS_COLORS[class] then
                 color = rgbhex(RAID_CLASS_COLORS[class])

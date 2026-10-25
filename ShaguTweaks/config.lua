@@ -150,6 +150,7 @@ settings.load = function(self)
     -- create category title collapse button
     local collapse = function(frame, expand)
       local parent = frame or this.parent
+      if parent and parent.parent then parent = parent.parent end
 
       if expand then
         local height = parent.collapse or parent:GetHeight()

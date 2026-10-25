@@ -4,10 +4,11 @@ local L = ShaguTweaks.L
 
 local units = { players = {}, mobs = {} }
 local queue = { }
-local scanBlockedLogged = {}
+local whoRetryAfter = {}
 local lastWhoRequest = 0
 local whoRequestedName = nil
 local WHO_REQUEST_INTERVAL = 10
+local WHO_NAME_RETRY_DELAY = 60
 
 local libunitscan = CreateFrame("Frame", "ShaguTweaksUnitScan", UIParent)
 
@@ -19,11 +20,15 @@ function ShaguTweaks.GetUnitData(name, active)
     local ret = units["mobs"][name]
     return ret.class, ret.level, ret.elite, nil
   elseif active then
-    if not queue[name] then
-      DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r queued class lookup for " .. tostring(name))
+    local retryAt = whoRetryAfter[name]
+    if (not retryAt or GetTime() >= retryAt)
+      and not (whoRequestedName and string.lower(whoRequestedName) == string.lower(name)) then
+      if not queue[name] then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r queued WHO lookup for " .. tostring(name))
+      end
+      queue[name] = true
+      libunitscan:Show()
     end
-    queue[name] = true
-    libunitscan:Show()
   end
 end
 
@@ -34,21 +39,22 @@ local function AddData(db, name, class, level, elite)
   units[db][name].level = level or units[db][name].level
   units[db][name].elite = elite or units[db][name].elite
   queue[name] = nil
-  scanBlockedLogged[name] = nil
+  whoRetryAfter[name] = nil
 end
 
 local function RequestWho(name)
   -- Don't replace a WHO query the user is actively viewing.
-  if WhoFrame and WhoFrame.IsShown and WhoFrame:IsShown() then return end
-  if whoRequestedName then return end
+  if WhoFrame and WhoFrame.IsShown and WhoFrame:IsShown() then return false end
+  if whoRequestedName then return false end
 
   local now = GetTime()
-  if now - lastWhoRequest < WHO_REQUEST_INTERVAL then return end
+  if now - lastWhoRequest < WHO_REQUEST_INTERVAL then return false end
 
   whoRequestedName = name
   lastWhoRequest = now
   DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[UnitScan]|r trying WHO lookup for " .. tostring(name))
   SendWho("n-" .. name)
+  return true
 end
 
 libunitscan:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -122,12 +128,15 @@ libunitscan:SetScript("OnEvent", function()
     end
 
     if event == "WHO_LIST_UPDATE" and whoRequestedName then
+      local requestedName = whoRequestedName
       if matchedRequestedName then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. whoRequestedName .. ".")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. requestedName .. ".")
       else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. whoRequestedName .. ".")
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. requestedName .. "; retrying after cooldown.")
+        whoRetryAfter[requestedName] = GetTime() + WHO_NAME_RETRY_DELAY
       end
       whoRequestedName = nil
+      if next(queue) then libunitscan:Show() end
     end
 
   elseif event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
@@ -148,50 +157,18 @@ libunitscan:SetScript("OnEvent", function()
   end
 end)
 
--- since TargetByName can only be triggered within vanilla,
--- we can't auto-scan targets on further expansions.
-if GetExpansion() == "vanilla" then
-  -- setup sound function switches
-  local SoundOn = PlaySound
-  local SoundOff = function() return end
-
-  libunitscan:SetScript("OnUpdate", function()
-    -- Don't disturb an existing target; log this blocker once per queued name.
-    if UnitExists("target") or UnitName("target") then
-      for queuedName in pairs(queue) do
-        if not scanBlockedLogged[queuedName] then
-          scanBlockedLogged[queuedName] = true
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r cannot scan " .. tostring(queuedName) .. " because you already have a target.")
-        end
-      end
-      return
-    end
-
-    local name = next(queue)
-    if name then
-      DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[UnitScan]|r attempting target lookup for " .. tostring(name))
-      -- disable sound
-      _G.PlaySound = SoundOff
-
-      -- try to target the unknown unit
-      TargetByName(name, true)
-      local foundName = UnitName("target")
-      local isPlayer = UnitIsPlayer("target")
-      local _, foundClass = UnitClass("target")
-      if foundName and foundName == name and isPlayer and foundClass then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r found " .. tostring(name) .. " as player class " .. tostring(foundClass))
-      else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r target lookup failed for " .. tostring(name) .. "; trying WHO fallback.")
-        RequestWho(name)
-      end
-      ClearTarget()
-
-      -- enable sound again
-      _G.PlaySound = SoundOn
-
+-- Resolve unknown chat senders through WHO only. Never change the player's target.
+libunitscan:SetScript("OnUpdate", function()
+  local name = next(queue)
+  if name then
+    if RequestWho(name) then
       queue[name] = nil
     end
+  end
 
+  if next(queue) then
+    this:Show()
+  else
     this:Hide()
-  end)
-end
+  end
+end)

@@ -4,6 +4,7 @@ local L = ShaguTweaks.L
 
 local units = { players = {}, mobs = {} }
 local queue = { }
+local scanBlockedLogged = {}
 
 local libunitscan = CreateFrame("Frame", "ShaguTweaksUnitScan", UIParent)
 
@@ -15,6 +16,9 @@ function ShaguTweaks.GetUnitData(name, active)
     local ret = units["mobs"][name]
     return ret.class, ret.level, ret.elite, nil
   elseif active then
+    if not queue[name] then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r queued class lookup for " .. tostring(name))
+    end
     queue[name] = true
     libunitscan:Show()
   end
@@ -27,6 +31,7 @@ local function AddData(db, name, class, level, elite)
   units[db][name].level = level or units[db][name].level
   units[db][name].elite = elite or units[db][name].elite
   queue[name] = nil
+  scanBlockedLogged[name] = nil
 end
 
 libunitscan:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -121,16 +126,33 @@ if GetExpansion() == "vanilla" then
   local SoundOff = function() return end
 
   libunitscan:SetScript("OnUpdate", function()
-    -- don't scan when another unit is in target
-    if UnitExists("target") or UnitName("target") then return end
+    -- Don't disturb an existing target; log this blocker once per queued name.
+    if UnitExists("target") or UnitName("target") then
+      for queuedName in pairs(queue) do
+        if not scanBlockedLogged[queuedName] then
+          scanBlockedLogged[queuedName] = true
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r cannot scan " .. tostring(queuedName) .. " because you already have a target.")
+        end
+      end
+      return
+    end
 
     local name = next(queue)
     if name then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[UnitScan]|r attempting target lookup for " .. tostring(name))
       -- disable sound
       _G.PlaySound = SoundOff
 
       -- try to target the unknown unit
       TargetByName(name, true)
+      local foundName = UnitName("target")
+      local isPlayer = UnitIsPlayer("target")
+      local _, foundClass = UnitClass("target")
+      if foundName and foundName == name and isPlayer and foundClass then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r found " .. tostring(name) .. " as player class " .. tostring(foundClass))
+      else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r lookup for " .. tostring(name) .. " did not find a matching player (target=" .. tostring(foundName) .. ", isPlayer=" .. tostring(isPlayer) .. ", class=" .. tostring(foundClass) .. ").")
+      end
       ClearTarget()
 
       -- enable sound again

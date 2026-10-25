@@ -8,6 +8,7 @@ local GetExpansion = ShaguTweaks.GetExpansion
 local cmatch = ShaguTweaks.cmatch
 local rgbhex = ShaguTweaks.rgbhex
 local strsplit = ShaguTweaks.strsplit
+local socialColorLogged = {}
 local friendinfo = gsub(gsub(FRIENDS_LEVEL_TEMPLATE,"%%s","%%s %%s"),"%%d","%%s")
 
 local module = ShaguTweaks:register({
@@ -42,6 +43,13 @@ module.enable = function(self)
 
               if class and class ~= UNKNOWN and RAID_CLASS_COLORS[class] then
                 color = rgbhex(RAID_CLASS_COLORS[class])
+                if socialColorLogged[real] then
+                  DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[Social Colors]|r " .. real .. " class resolved: " .. class)
+                  socialColorLogged[real] = nil
+                end
+              elseif not socialColorLogged[real] then
+                socialColorLogged[real] = true
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[Social Colors]|r " .. real .. " has no cached class; lookup requested (display remains grey).")
               end
 
               return link .. color .. display .. "|r" .. close

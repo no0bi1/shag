@@ -43,8 +43,8 @@ module.enable = function(self)
                 color = rgbhex(RAID_CLASS_COLORS[class])
               end
 
-              text = string.gsub(text, "|Hplayer:"..name.."|h%["..real.."%]|h(.-:-)",
-                "|r["..color.."|Hplayer:"..name.."|h" .. color .. real .. "|h|r".."]|r".."%1")
+              text = string.gsub(text, "|Hplayer:"..name.."|h%["..real.."%]|h",
+                "|r["..color.."|Hplayer:"..name.."|h" .. color .. real .. "|h|r".."]|r")
             end
           end
 

@@ -38,13 +38,19 @@ function ShaguTweaks.ShouldSuppressUnitScanWhoMessage(text)
 end
 
 function ShaguTweaks.GetUnitData(name, active)
-  if units["players"][name] then
-    local ret = units["players"][name]
-    return ret.class, ret.level, ret.elite, true
-  elseif units["mobs"][name] then
-    local ret = units["mobs"][name]
-    return ret.class, ret.level, ret.elite, nil
-  elseif active then
+  local player = units["players"][name]
+  if player and player.class then
+    return player.class, player.level, player.elite, true
+  end
+
+  local mob = units["mobs"][name]
+  if mob then
+    return mob.class, mob.level, mob.elite, nil
+  end
+
+  -- A player record without a class is not a successful cache hit.
+  -- This can happen when WHO returns partial data; allow another lookup.
+  if active then
     local retryAt = whoRetryAfter[name]
     if (not retryAt or GetTime() >= retryAt)
       and not (whoRequestedName and string.lower(whoRequestedName) == string.lower(name)) then
@@ -54,6 +60,10 @@ function ShaguTweaks.GetUnitData(name, active)
       queue[name] = true
       libunitscan:Show()
     end
+  end
+
+  if player then
+    return player.class, player.level, player.elite, true
   end
 end
 

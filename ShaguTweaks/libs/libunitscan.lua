@@ -4,15 +4,11 @@ local L = ShaguTweaks.L
 
 local units = { players = {}, mobs = {} }
 local queue = { }
-local whoRetryAfter = {}
-local lastWhoRequest = 0
 local whoRequestedName = nil
 local whoOutputSuppressName = nil
 local whoOutputSuppressUntil = 0
 local whoOutputLineSuppressed = false
 local WHO_OUTPUT_SUPPRESS_WINDOW = 5
-local WHO_REQUEST_INTERVAL = 10
-local WHO_NAME_RETRY_DELAY = 60
 
 local libunitscan = CreateFrame("Frame", "ShaguTweaksUnitScan", UIParent)
 
@@ -51,9 +47,7 @@ function ShaguTweaks.GetUnitData(name, active)
   -- A player record without a class is not a successful cache hit.
   -- This can happen when WHO returns partial data; allow another lookup.
   if active then
-    local retryAt = whoRetryAfter[name]
-    if (not retryAt or GetTime() >= retryAt)
-      and not (whoRequestedName and string.lower(whoRequestedName) == string.lower(name)) then
+    if not (whoRequestedName and string.lower(whoRequestedName) == string.lower(name)) then
       if not queue[name] then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r queued WHO lookup for " .. tostring(name))
       end
@@ -74,7 +68,6 @@ local function AddData(db, name, class, level, elite)
   units[db][name].level = level or units[db][name].level
   units[db][name].elite = elite or units[db][name].elite
   queue[name] = nil
-  whoRetryAfter[name] = nil
 end
 
 local function RequestWho(name)
@@ -83,13 +76,10 @@ local function RequestWho(name)
   if whoRequestedName then return false end
 
   local now = GetTime()
-  if now - lastWhoRequest < WHO_REQUEST_INTERVAL then return false end
-
   whoRequestedName = name
   whoOutputSuppressName = name
   whoOutputSuppressUntil = now + WHO_OUTPUT_SUPPRESS_WINDOW
   whoOutputLineSuppressed = false
-  lastWhoRequest = now
   DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[UnitScan]|r trying WHO lookup for " .. tostring(name))
   SendWho("n-" .. name)
   return true
@@ -170,8 +160,7 @@ libunitscan:SetScript("OnEvent", function()
       if matchedRequestedName then
         DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. requestedName .. ".")
       else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. requestedName .. "; retrying after cooldown.")
-        whoRetryAfter[requestedName] = GetTime() + WHO_NAME_RETRY_DELAY
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. requestedName .. ".")
       end
       whoRequestedName = nil
       if next(queue) then libunitscan:Show() end

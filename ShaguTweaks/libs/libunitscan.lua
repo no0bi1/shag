@@ -135,8 +135,15 @@ libunitscan:SetScript("OnEvent", function()
     local name, class, level, _
     for i = 1, GetNumGuildMembers() do
       name, _, _, level, class = GetGuildRosterInfo(i)
+      local rawClass = class
       class = L["class"][class] or nil
       AddData("players", name, class, level)
+
+      -- Diagnostic: report roster entries whose class could not be cached.
+      if name and not class then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r guild roster has no translated class for "
+          .. tostring(name) .. " (raw class: " .. tostring(rawClass) .. ").")
+      end
     end
 
   elseif event == "RAID_ROSTER_UPDATE" then

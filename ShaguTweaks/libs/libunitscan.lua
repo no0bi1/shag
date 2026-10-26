@@ -169,7 +169,13 @@ libunitscan:SetScript("OnEvent", function()
       end
     end
 
-    if event == "WHO_LIST_UPDATE" and whoRequestedName then
+    -- Some Vanilla server/client combinations report the WHO result through
+    -- system chat without reliably delivering WHO_LIST_UPDATE. Treat the
+    -- final "player total" line as completion too, so the queue cannot stall.
+    local whoFinished = event == "WHO_LIST_UPDATE"
+      or (event == "CHAT_MSG_SYSTEM" and arg1 and string.find(arg1, "player total", 1, true))
+
+    if whoFinished and whoRequestedName then
       local requestedName = whoRequestedName
       if matchedRequestedName then
         DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. requestedName .. ".")

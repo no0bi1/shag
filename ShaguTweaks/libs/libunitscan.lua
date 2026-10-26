@@ -6,6 +6,7 @@ local units = { players = {}, mobs = {} }
 local queue = { }
 local whoRequestedName = nil
 local whoBlockedLog = {}
+local guildRosterMissingClassLogged = {}
 local whoOutputSuppressName = nil
 local whoOutputSuppressUntil = 0
 local whoOutputLineSuppressed = false
@@ -140,9 +141,12 @@ libunitscan:SetScript("OnEvent", function()
       AddData("players", name, class, level)
 
       -- Diagnostic: report roster entries whose class could not be cached.
-      if name and not class then
+      if name and not class and not guildRosterMissingClassLogged[name] then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r guild roster has no translated class for "
           .. tostring(name) .. " (raw class: " .. tostring(rawClass) .. ").")
+        guildRosterMissingClassLogged[name] = true
+      elseif name and class then
+        guildRosterMissingClassLogged[name] = nil
       end
     end
 

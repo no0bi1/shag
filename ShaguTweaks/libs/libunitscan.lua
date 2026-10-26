@@ -5,6 +5,8 @@ local L = ShaguTweaks.L
 local units = { players = {}, mobs = {} }
 local queue = { }
 local whoRequestedName = nil
+local whoRequestedAt = 0
+local WHO_REQUEST_TIMEOUT = 8
 local whoBlockedLog = {}
 local guildRosterMissingClassLogged = {}
 local whoOutputSuppressName = nil
@@ -72,6 +74,24 @@ local function AddData(db, name, class, level, elite)
   queue[name] = nil
 end
 
+local function FinishWho(found)
+  if not whoRequestedName then return end
+
+  local requestedName = whoRequestedName
+  if found then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. requestedName .. ".")
+  else
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. requestedName .. ".")
+  end
+
+  whoRequestedName = nil
+  whoRequestedAt = 0
+  whoOutputSuppressName = nil
+  whoOutputSuppressUntil = 0
+  whoOutputLineSuppressed = false
+  if next(queue) then libunitscan:Show() end
+end
+
 local function RequestWho(name)
   -- Don't replace a WHO query the user is actively viewing.
   if WhoFrame and WhoFrame.IsShown and WhoFrame:IsShown() then
@@ -92,6 +112,7 @@ local function RequestWho(name)
   whoBlockedLog[name] = nil
   local now = GetTime()
   whoRequestedName = name
+  whoRequestedAt = now
   whoOutputSuppressName = name
   whoOutputSuppressUntil = now + WHO_OUTPUT_SUPPRESS_WINDOW
   whoOutputLineSuppressed = false
@@ -171,6 +192,9 @@ libunitscan:SetScript("OnEvent", function()
   elseif event == "WHO_LIST_UPDATE" or event == "CHAT_MSG_SYSTEM" then
     local name, class, level, _
     local matchedRequestedName = false
+
+    -- Cache every returned player, but only treat a result as our lookup when
+    -- its name matches the request currently in flight.
     for i = 1, GetNumWhoResults() do
       name, _, level, _, class, _ = GetWhoInfo(i)
       class = L["class"][class] or nil
@@ -180,21 +204,12 @@ libunitscan:SetScript("OnEvent", function()
       end
     end
 
-    -- Some Vanilla server/client combinations report the WHO result through
-    -- system chat without reliably delivering WHO_LIST_UPDATE. Treat the
-    -- final "player total" line as completion too, so the queue cannot stall.
-    local whoFinished = event == "WHO_LIST_UPDATE"
-      or (event == "CHAT_MSG_SYSTEM" and arg1 and string.find(arg1, "player total", 1, true))
-
-    if whoFinished and whoRequestedName then
-      local requestedName = whoRequestedName
-      if matchedRequestedName then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. requestedName .. ".")
-      else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. requestedName .. ".")
-      end
-      whoRequestedName = nil
-      if next(queue) then libunitscan:Show() end
+    if whoRequestedName and matchedRequestedName then
+      FinishWho(true)
+    elseif event == "CHAT_MSG_SYSTEM" and whoRequestedName and arg1
+      and string.find(arg1, "player total", 1, true) then
+      -- The final system line confirms an empty/no-match response.
+      FinishWho(false)
     end
 
   elseif event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
@@ -217,6 +232,12 @@ end)
 
 -- Resolve unknown chat senders through WHO only. Never change the player's target.
 libunitscan:SetScript("OnUpdate", function()
+  -- Never let a missing WHO event block every queued sender indefinitely.
+  if whoRequestedName and GetTime() - whoRequestedAt >= WHO_REQUEST_TIMEOUT then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO timed out for " .. tostring(whoRequestedName) .. ".")
+    FinishWho(false)
+  end
+
   local name = next(queue)
   if name then
     if RequestWho(name) then

@@ -5,6 +5,7 @@ local L = ShaguTweaks.L
 local units = { players = {}, mobs = {} }
 local queue = { }
 local whoRequestedName = nil
+local whoBlockedLog = {}
 local whoOutputSuppressName = nil
 local whoOutputSuppressUntil = 0
 local whoOutputLineSuppressed = false
@@ -72,9 +73,22 @@ end
 
 local function RequestWho(name)
   -- Don't replace a WHO query the user is actively viewing.
-  if WhoFrame and WhoFrame.IsShown and WhoFrame:IsShown() then return false end
-  if whoRequestedName then return false end
+  if WhoFrame and WhoFrame.IsShown and WhoFrame:IsShown() then
+    if whoBlockedLog[name] ~= "WhoFrame is open" then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r WHO blocked for " .. tostring(name) .. ": WhoFrame is open.")
+      whoBlockedLog[name] = "WhoFrame is open"
+    end
+    return false
+  end
+  if whoRequestedName then
+    if whoBlockedLog[name] ~= "another WHO request is pending" then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r WHO blocked for " .. tostring(name) .. ": waiting for " .. tostring(whoRequestedName) .. ".")
+      whoBlockedLog[name] = "another WHO request is pending"
+    end
+    return false
+  end
 
+  whoBlockedLog[name] = nil
   local now = GetTime()
   whoRequestedName = name
   whoOutputSuppressName = name

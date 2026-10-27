@@ -29,6 +29,33 @@ local current_unit = "none"
 local target_frame_tooltip = false
 local updating = false
 
+-- Explicit tooltip lifecycle state. The anchor hook identifies normal world
+-- tooltips; target-frame hooks remain authoritative for the compact target view.
+local tooltip_source = "none"
+local tooltip_owner = nil
+local anchor_event = false
+local anchor_parent = nil
+local anchor_time = 0
+local ANCHOR_WINDOW = 0.25
+
+-- Prevent the same visible tooltip from receiving the extra lines twice.
+local decorated_unit = nil
+local decorated_source = nil
+local decorated_title = nil
+
+local oldDefaultAnchor = _G.GameTooltip_SetDefaultAnchor
+if oldDefaultAnchor then
+  _G.GameTooltip_SetDefaultAnchor = function(tooltip, parent)
+    local r1, r2, r3 = oldDefaultAnchor(tooltip, parent)
+    if tooltip == GameTooltip then
+      anchor_event = true
+      anchor_parent = parent
+      anchor_time = GetTime()
+    end
+    return r1, r2, r3
+  end
+end
+
 --------------------------------------------------
 -- Unit detection
 --------------------------------------------------
@@ -42,14 +69,21 @@ local function MatchUnit(unit, title)
 end
 
 local function GetUnit()
-  if current_unit ~= "none" and UnitExists(current_unit) then
-    return current_unit
+  -- A target-frame tooltip is explicitly tied to the current target.
+  if tooltip_source == "target-frame" and UnitExists("target") then
+    return "target"
   end
 
+  -- Never trust a cached unit for a world tooltip: mouseover may have changed
+  -- while the tooltip frame remained visible.
   local title = GameTooltipTextLeft1:GetText()
 
   if not title then
     return "none"
+  end
+
+  if MatchUnit("mouseover", title) then
+    return "mouseover"
   end
 
   for _, unit in ipairs(units) do
@@ -256,11 +290,25 @@ local function UpdateTooltip()
   end
 
   if unit == "none" or not UnitExists(unit) then
+    current_unit = "none"
+    GameTooltipStatusBar:Hide()
+    return
+  end
+
+  local title = GameTooltipTextLeft1:GetText()
+  if decorated_unit == unit
+    and decorated_source == tooltip_source
+    and decorated_title == title then
+    current_unit = unit
+    UpdateBarVisibility()
     return
   end
 
   updating = true
   current_unit = unit
+  decorated_unit = unit
+  decorated_source = tooltip_source
+  decorated_title = title
 
   local name = UnitName(unit)
   local _, class = UnitClass(unit)
@@ -354,6 +402,13 @@ local function ResetTooltip()
   current_unit = "none"
   target_frame_tooltip = false
   updating = false
+  tooltip_source = "none"
+  tooltip_owner = nil
+  anchor_event = false
+  anchor_parent = nil
+  decorated_unit = nil
+  decorated_source = nil
+  decorated_title = nil
 end
 
 --------------------------------------------------
@@ -440,6 +495,23 @@ module.enable = function(self)
       oldTooltipShow()
     end
 
+    decorated_unit = nil
+    decorated_source = nil
+    decorated_title = nil
+
+    if target_frame_tooltip then
+      tooltip_source = "target-frame"
+    elseif anchor_event and (GetTime() - anchor_time) <= ANCHOR_WINDOW then
+      tooltip_source = "world"
+      tooltip_owner = anchor_parent
+    else
+      tooltip_source = "unknown"
+      tooltip_owner = nil
+    end
+
+    anchor_event = false
+    anchor_parent = nil
+
     if not target_frame_tooltip then
       UpdateTooltip()
     end
@@ -470,6 +542,8 @@ module.enable = function(self)
 
     frame:SetScript("OnEnter", function()
       target_frame_tooltip = true
+      tooltip_source = "target-frame"
+      tooltip_owner = frame
       current_unit = "target"
 
       if oldEnter then
@@ -494,6 +568,27 @@ module.enable = function(self)
 
   HookUnitFrame(TargetFrame)
   HookUnitFrame(TargetFramePortrait)
+
+  ----------------------------------------------
+  -- Tooltip context events
+  ----------------------------------------------
+
+  local context = CreateFrame("Frame")
+  context:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+  context:RegisterEvent("PLAYER_TARGET_CHANGED")
+  context:SetScript("OnEvent", function()
+    -- Invalidate the decoration cache when the units backing a tooltip change.
+    decorated_unit = nil
+    decorated_source = nil
+    decorated_title = nil
+
+    if GameTooltip:IsVisible() and not target_frame_tooltip then
+      tooltip_source = "world"
+      UpdateTooltip()
+    elseif target_frame_tooltip and not UnitExists("target") then
+      GameTooltip:Hide()
+    end
+  end)
 
   ----------------------------------------------
   -- Health-bar visibility driver

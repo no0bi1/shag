@@ -297,8 +297,7 @@ local function UpdateTooltip()
 
   local title = GameTooltipTextLeft1:GetText()
   if decorated_unit == unit
-    and decorated_source == tooltip_source
-    and decorated_title == title then
+    and decorated_source == tooltip_source then
     current_unit = unit
     UpdateBarVisibility()
     return
@@ -577,16 +576,16 @@ module.enable = function(self)
   context:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
   context:RegisterEvent("PLAYER_TARGET_CHANGED")
   context:SetScript("OnEvent", function()
-    -- Invalidate the decoration cache when the units backing a tooltip change.
-    decorated_unit = nil
-    decorated_source = nil
-    decorated_title = nil
-
-    if GameTooltip:IsVisible() and not target_frame_tooltip then
-      tooltip_source = "world"
-      UpdateTooltip()
-    elseif target_frame_tooltip and not UnitExists("target") then
+    -- Mouseover/target events are signals, not proof that the visible tooltip
+    -- has changed. Do not re-append lines to an already decorated tooltip.
+    if target_frame_tooltip and not UnitExists("target") then
       GameTooltip:Hide()
+    elseif event == "PLAYER_TARGET_CHANGED" and target_frame_tooltip
+      and GameTooltip:IsVisible() then
+      decorated_unit = nil
+      decorated_source = nil
+      decorated_title = nil
+      UpdateTooltip()
     end
   end)
 

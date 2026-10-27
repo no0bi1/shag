@@ -541,25 +541,19 @@ module.enable = function(self)
     local oldEnter = frame:GetScript("OnEnter")
 
     frame:SetScript("OnEnter", function()
-      target_frame_tooltip = true
-      current_unit = "target"
-
       if oldEnter then
         oldEnter()
       end
 
-      if UnitExists("target") then
-        -- Some 1.12 target-frame portraits have no OnEnter handler of their
-        -- own. In that case, explicitly create the tooltip instead of only
-        -- decorating one if Blizzard has already shown it.
-        if not GameTooltip:IsVisible() then
-          GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
-          GameTooltip:SetUnit("target")
-          GameTooltip:Show()
-        end
+      -- The original handler may hide/recreate the tooltip, firing our
+      -- OnHide reset and clearing target_frame_tooltip. Set target state
+      -- after Blizzard's handler so an NPC mouseover cannot win detection.
+      target_frame_tooltip = true
+      current_unit = "target"
+      decorated_key = nil
+      refresh_pending = false
 
-        decorated_key = nil
-        refresh_pending = true
+      if UnitExists("target") and GameTooltip:IsVisible() then
         UpdateTooltip()
       end
     end)

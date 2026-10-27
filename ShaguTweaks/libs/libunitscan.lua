@@ -21,9 +21,10 @@ function ShaguTweaks.ShouldSuppressUnitScanWhoMessage(text)
     return false
   end
 
-  if string.find(text, whoOutputSuppressName, 1, true)
-    and string.find(text, "Level ", 1, true)
-    and string.find(text, " - ", 1, true) then
+  -- Vanilla clients vary the formatting of WHO result lines. Match the
+  -- requested name and level field, rather than requiring a specific separator.
+  if string.find(string.lower(text), string.lower(whoOutputSuppressName), 1, true)
+    and string.find(text, "Level ", 1, true) then
     whoOutputLineSuppressed = true
     return true
   end

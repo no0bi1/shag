@@ -27,6 +27,8 @@ local units = {
 
 local current_unit = "none"
 local target_frame_tooltip = false
+local tooltip_owner = nil
+local decorated_key = nil
 local updating = false
 
 --------------------------------------------------
@@ -42,14 +44,24 @@ local function MatchUnit(unit, title)
 end
 
 local function GetUnit()
-  if current_unit ~= "none" and UnitExists(current_unit) then
-    return current_unit
-  end
-
   local title = GameTooltipTextLeft1:GetText()
 
   if not title then
     return "none"
+  end
+
+  -- Prefer the live mouseover when it matches the tooltip currently shown.
+  -- Cached unit state is only trusted when it still matches the tooltip title.
+  if MatchUnit("mouseover", title) then
+    return "mouseover"
+  end
+
+  if target_frame_tooltip and MatchUnit("target", title) then
+    return "target"
+  end
+
+  if current_unit ~= "none" and MatchUnit(current_unit, title) then
+    return current_unit
   end
 
   for _, unit in ipairs(units) do
@@ -272,6 +284,21 @@ local function UpdateTooltip()
 
   local name = UnitName(unit)
   local _, class = UnitClass(unit)
+  local target_name = UnitName(unit .. "target")
+  local key = table.concat({
+    unit,
+    name or "",
+    target_name or "",
+    target_frame_tooltip and "target-frame" or "world"
+  }, ":")
+
+  -- Tooltip refreshes can occur repeatedly while the cursor remains still.
+  -- Only decorate once for the current tooltip content.
+  if decorated_key == key then
+    updating = false
+    UpdateBarVisibility()
+    return
+  end
 
   ------------------------------------------------
   -- Compact tooltip: players only
@@ -348,6 +375,7 @@ local function UpdateTooltip()
     end
   end
 
+  decorated_key = key
   updating = false
 
   GameTooltip:Show()
@@ -361,6 +389,8 @@ end
 local function ResetTooltip()
   current_unit = "none"
   target_frame_tooltip = false
+  tooltip_owner = nil
+  decorated_key = nil
   updating = false
 end
 
@@ -438,6 +468,35 @@ module.enable = function(self)
   end
 
   ----------------------------------------------
+  -- Explicit tooltip state tracking
+  ----------------------------------------------
+
+  -- Track who anchored the tooltip. The wrapper preserves Blizzard's call
+  -- and arguments; it only records state for GameTooltip.
+  local originalSetDefaultAnchor = _G.GameTooltip_SetDefaultAnchor
+  if originalSetDefaultAnchor and not _G.ShaguTweaksTooltipDetailsAnchorHooked then
+    _G.GameTooltip_SetDefaultAnchor = function(tooltip, parent, ...)
+      if tooltip == GameTooltip then
+        tooltip_owner = parent
+        decorated_key = nil
+      end
+      return originalSetDefaultAnchor(tooltip, parent, ...)
+    end
+    _G.ShaguTweaksTooltipDetailsAnchorHooked = true
+  end
+
+  -- Blizzard clears lines when reusing a tooltip for different content.
+  -- Treat that as a new content generation so our added lines can be rebuilt.
+  if not GameTooltip.tooltipDetailsClearLinesHooked then
+    local originalClearLines = GameTooltip.ClearLines
+    GameTooltip.ClearLines = function(...)
+      decorated_key = nil
+      return originalClearLines(...)
+    end
+    GameTooltip.tooltipDetailsClearLinesHooked = true
+  end
+
+  ----------------------------------------------
   -- Tooltip events
   ----------------------------------------------
 
@@ -504,13 +563,28 @@ module.enable = function(self)
   HookUnitFrame(TargetFramePortrait)
 
   ----------------------------------------------
-  -- Health-bar visibility driver
+  -- Event-driven tooltip and health-bar updates
   ----------------------------------------------
 
   local driver = CreateFrame("Frame")
+  driver:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+  driver:RegisterEvent("PLAYER_TARGET_CHANGED")
+  driver:RegisterEvent("UNIT_HEALTH")
+  driver:RegisterEvent("UNIT_MAXHEALTH")
+  driver:RegisterEvent("UNIT_FLAGS")
+  driver:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-  driver:SetScript("OnUpdate", function()
-    if GameTooltip:IsVisible() then
+  driver:SetScript("OnEvent", function()
+    if not GameTooltip:IsVisible() then
+      return
+    end
+
+    if event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
+      -- Re-resolve the unit against the live tooltip rather than trusting a
+      -- previous mouseover/target value.
+      decorated_key = nil
+      UpdateTooltip()
+    else
       UpdateBarVisibility()
     end
   end)

@@ -29,6 +29,7 @@ local current_unit = "none"
 local target_frame_tooltip = false
 local tooltip_owner = nil
 local decorated_key = nil
+local refresh_pending = false
 local updating = false
 
 --------------------------------------------------
@@ -376,6 +377,7 @@ local function UpdateTooltip()
   end
 
   decorated_key = key
+  refresh_pending = false
   updating = false
 
   GameTooltip:Show()
@@ -391,6 +393,7 @@ local function ResetTooltip()
   target_frame_tooltip = false
   tooltip_owner = nil
   decorated_key = nil
+  refresh_pending = false
   updating = false
 end
 
@@ -479,6 +482,7 @@ module.enable = function(self)
       if tooltip == GameTooltip then
         tooltip_owner = parent
         decorated_key = nil
+        refresh_pending = true
       end
       return originalSetDefaultAnchor(tooltip, parent, ...)
     end
@@ -491,6 +495,7 @@ module.enable = function(self)
     local originalClearLines = GameTooltip.ClearLines
     GameTooltip.ClearLines = function(...)
       decorated_key = nil
+      refresh_pending = true
       return originalClearLines(...)
     end
     GameTooltip.tooltipDetailsClearLinesHooked = true
@@ -580,11 +585,21 @@ module.enable = function(self)
     end
 
     if event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
-      -- Re-resolve the unit against the live tooltip rather than trusting a
-      -- previous mouseover/target value.
+      -- Let Blizzard finish changing the tooltip content first. The one-shot
+      -- refresh below resolves the unit against the updated title.
       decorated_key = nil
-      UpdateTooltip()
+      refresh_pending = true
     else
+      UpdateBarVisibility()
+    end
+  end)
+
+  driver:SetScript("OnUpdate", function()
+    -- Fallback for tooltip content that changes after its event fires.
+    -- This runs only while a refresh is pending, not every frame.
+    if refresh_pending and GameTooltip:IsVisible() then
+      refresh_pending = false
+      UpdateTooltip()
       UpdateBarVisibility()
     end
   end)

@@ -548,7 +548,18 @@ module.enable = function(self)
         oldEnter()
       end
 
-      if UnitExists("target") and GameTooltip:IsVisible() then
+      if UnitExists("target") then
+        -- Some 1.12 target-frame portraits have no OnEnter handler of their
+        -- own. In that case, explicitly create the tooltip instead of only
+        -- decorating one if Blizzard has already shown it.
+        if not GameTooltip:IsVisible() then
+          GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+          GameTooltip:SetUnit("target")
+          GameTooltip:Show()
+        end
+
+        decorated_key = nil
+        refresh_pending = true
         UpdateTooltip()
       end
     end)

@@ -67,6 +67,10 @@ local function AddData(db, name, class, level, elite)
   units[db][name].level = level or units[db][name].level
   units[db][name].elite = elite or units[db][name].elite
   queue[name] = nil
+
+  if units[db][name].class and ShaguTweaks.ResolveSocialColorMessages then
+    ShaguTweaks.ResolveSocialColorMessages(name, units[db][name].class)
+  end
 end
 
 local function FinishWho(found, timedOut)
@@ -78,6 +82,9 @@ local function FinishWho(found, timedOut)
       DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO timed out for " .. tostring(requestedName) .. ".")
     else
       DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r Could not resolve class for " .. tostring(requestedName) .. ".")
+    end
+    if ShaguTweaks.ResolveSocialColorMessages then
+      ShaguTweaks.ResolveSocialColorMessages(requestedName, nil)
     end
   end
 

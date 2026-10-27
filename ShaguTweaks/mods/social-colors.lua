@@ -10,6 +10,47 @@ local rgbhex = ShaguTweaks.rgbhex
 local strsplit = ShaguTweaks.strsplit
 local friendinfo = gsub(gsub(FRIENDS_LEVEL_TEMPLATE,"%%s","%%s %%s"),"%%d","%%s")
 
+-- Unknown-sender messages are kept only in memory while UnitScan resolves class.
+local pendingSocialMessages = {}
+local SOCIAL_MESSAGE_TIMEOUT = 9
+
+local function ColorChatText(text, requestLookup)
+  local unresolvedName
+  text = string.gsub(text, "(|Hplayer:([^|]+)|h)(.-)(|h)", function(link, name, display, close)
+    local real = strsplit(":", name)
+    local color = "|cffaaaaaa"
+    local class = GetUnitData(real, requestLookup)
+
+    if class and class ~= UNKNOWN and RAID_CLASS_COLORS[class] then
+      color = rgbhex(RAID_CLASS_COLORS[class])
+    elseif not unresolvedName then
+      unresolvedName = real
+    end
+
+    return link .. color .. display .. "|r" .. close
+  end)
+  return text, unresolvedName
+end
+
+local function FlushSocialMessages(name, class)
+  local messages = pendingSocialMessages[name]
+  if not messages then return end
+  pendingSocialMessages[name] = nil
+
+  for _, message in ipairs(messages) do
+    local text = ColorChatText(message.text, false)
+    message.original(message.frame, text, message.a1, message.a2, message.a3, message.a4, message.a5)
+  end
+end
+
+function ShaguTweaks.ResolveSocialColorMessages(name, class)
+  if name and class and RAID_CLASS_COLORS[class] then
+    FlushSocialMessages(name, class)
+  elseif name then
+    FlushSocialMessages(name, nil)
+  end
+end
+
 local module = ShaguTweaks:register({
   title = T["Social Colors"],
   description = T["Show class colors in Who, Guild, Friends and Chat."],
@@ -38,21 +79,26 @@ module.enable = function(self)
           end
 
           if text then
-            text = string.gsub(text, "(|Hplayer:([^|]+)|h)(.-)(|h)", function(link, name, display, close)
-              local real, _ = strsplit(":", name)
-              local color = "|cffaaaaaa"
-              -- Queue lookups for any uncached chat sender, regardless of channel hyperlink format.
-              local class = GetUnitData(real, true)
-
-              if class and class ~= UNKNOWN and RAID_CLASS_COLORS[class] then
-                color = rgbhex(RAID_CLASS_COLORS[class])
+            local coloredText, unresolvedName = ColorChatText(text, true)
+            if unresolvedName then
+              local messages = pendingSocialMessages[unresolvedName]
+              if not messages then
+                messages = {}
+                pendingSocialMessages[unresolvedName] = messages
               end
-
-              return link .. color .. display .. "|r" .. close
-            end)
+              table.insert(messages, {
+                frame = frame,
+                original = frame.HookAddMessageColor,
+                text = text,
+                a1 = a1, a2 = a2, a3 = a3, a4 = a4, a5 = a5,
+                queuedAt = GetTime(),
+              })
+              return
+            end
+            text = coloredText
           end
 
-          _G["ChatFrame"..i].HookAddMessageColor(frame, text, a1, a2, a3, a4, a5)
+          frame.HookAddMessageColor(frame, text, a1, a2, a3, a4, a5)
         end
       end
     end
@@ -69,6 +115,16 @@ module.enable = function(self)
     name = cmatch(arg1, _G.ERR_FRIEND_OFFLINE_S)
     if name and playerdb[name] and playerdb[name].cname then
       playerdb[name].lastseen = date("%a %d-%b-%Y")
+    end
+  end)
+
+  -- Release held messages even if WHO cannot run (for example, while WhoFrame is open).
+  socialmod:SetScript("OnUpdate", function()
+    local now = GetTime()
+    for name, messages in pairs(pendingSocialMessages) do
+      if messages[1] and now - messages[1].queuedAt >= SOCIAL_MESSAGE_TIMEOUT then
+        FlushSocialMessages(name, nil)
+      end
     end
   end)
 

@@ -7,8 +7,6 @@ local queue = { }
 local whoRequestedName = nil
 local whoRequestedAt = 0
 local WHO_REQUEST_TIMEOUT = 8
-local whoBlockedLog = {}
-local guildRosterMissingClassLogged = {}
 local whoOutputSuppressName = nil
 local whoOutputSuppressUntil = 0
 local whoOutputLineSuppressed = false
@@ -52,9 +50,6 @@ function ShaguTweaks.GetUnitData(name, active)
   -- This can happen when WHO returns partial data; allow another lookup.
   if active then
     if not (whoRequestedName and string.lower(whoRequestedName) == string.lower(name)) then
-      if not queue[name] then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r queued WHO lookup for " .. tostring(name))
-      end
       queue[name] = true
       libunitscan:Show()
     end
@@ -74,14 +69,16 @@ local function AddData(db, name, class, level, elite)
   queue[name] = nil
 end
 
-local function FinishWho(found)
+local function FinishWho(found, timedOut)
   if not whoRequestedName then return end
 
   local requestedName = whoRequestedName
-  if found then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff66ff66[UnitScan]|r WHO found " .. requestedName .. ".")
-  else
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO returned no class match for " .. requestedName .. ".")
+  if not found then
+    if timedOut then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO timed out for " .. tostring(requestedName) .. ".")
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r Could not resolve class for " .. tostring(requestedName) .. ".")
+    end
   end
 
   whoRequestedName = nil
@@ -95,28 +92,18 @@ end
 local function RequestWho(name)
   -- Don't replace a WHO query the user is actively viewing.
   if WhoFrame and WhoFrame.IsShown and WhoFrame:IsShown() then
-    if whoBlockedLog[name] ~= "WhoFrame is open" then
-      DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r WHO blocked for " .. tostring(name) .. ": WhoFrame is open.")
-      whoBlockedLog[name] = "WhoFrame is open"
-    end
     return false
   end
   if whoRequestedName then
-    if whoBlockedLog[name] ~= "another WHO request is pending" then
-      DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r WHO blocked for " .. tostring(name) .. ": waiting for " .. tostring(whoRequestedName) .. ".")
-      whoBlockedLog[name] = "another WHO request is pending"
-    end
     return false
   end
 
-  whoBlockedLog[name] = nil
   local now = GetTime()
   whoRequestedName = name
   whoRequestedAt = now
   whoOutputSuppressName = name
   whoOutputSuppressUntil = now + WHO_OUTPUT_SUPPRESS_WINDOW
   whoOutputLineSuppressed = false
-  DEFAULT_CHAT_FRAME:AddMessage("|cffaaaaaa[UnitScan]|r trying WHO lookup for " .. tostring(name))
   SendWho("n-" .. name)
   return true
 end
@@ -157,18 +144,8 @@ libunitscan:SetScript("OnEvent", function()
     local name, class, level, _
     for i = 1, GetNumGuildMembers() do
       name, _, _, level, class = GetGuildRosterInfo(i)
-      local rawClass = class
       class = L["class"][class] or nil
       AddData("players", name, class, level)
-
-      -- Diagnostic: report roster entries whose class could not be cached.
-      if name and not class and not guildRosterMissingClassLogged[name] then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[UnitScan]|r guild roster has no translated class for "
-          .. tostring(name) .. " (raw class: " .. tostring(rawClass) .. ").")
-        guildRosterMissingClassLogged[name] = true
-      elseif name and class then
-        guildRosterMissingClassLogged[name] = nil
-      end
     end
 
   elseif event == "RAID_ROSTER_UPDATE" then
@@ -234,8 +211,7 @@ end)
 libunitscan:SetScript("OnUpdate", function()
   -- Never let a missing WHO event block every queued sender indefinitely.
   if whoRequestedName and GetTime() - whoRequestedAt >= WHO_REQUEST_TIMEOUT then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO timed out for " .. tostring(whoRequestedName) .. ".")
-    FinishWho(false)
+    FinishWho(false, true)
   end
 
   local name = next(queue)

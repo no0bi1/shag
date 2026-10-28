@@ -91,6 +91,8 @@ local function FinishWho(found, timedOut)
 
   whoRequestedName = nil
   whoRequestedAt = 0
+  -- Restore normal chat handling after this automated request completes.
+  if SetWhoToUI then SetWhoToUI(0) end
   whoOutputSuppressName = nil
   whoOutputSuppressUntil = 0
   whoOutputLineSuppressed = false
@@ -112,6 +114,9 @@ local function RequestWho(name)
   whoOutputSuppressName = name
   whoOutputSuppressUntil = now + WHO_OUTPUT_SUPPRESS_WINDOW
   whoOutputLineSuppressed = false
+  -- Route this automated query through WHO_LIST_UPDATE instead of letting
+  -- the client print short results directly into chat.
+  if SetWhoToUI then SetWhoToUI(1) end
   SendWho("n-" .. name)
   return true
 end
@@ -191,6 +196,9 @@ libunitscan:SetScript("OnEvent", function()
 
     if whoRequestedName and matchedRequestedName then
       FinishWho(true)
+    elseif event == "WHO_LIST_UPDATE" and whoRequestedName then
+      -- The UI event is the response path when SetWhoToUI(1) is active.
+      FinishWho(false)
     elseif event == "CHAT_MSG_SYSTEM" and whoRequestedName and arg1
       and string.find(arg1, "player total", 1, true) then
       -- The final system line confirms an empty/no-match response.

@@ -38,8 +38,17 @@ local function FlushSocialMessages(name, class)
   pendingSocialMessages[name] = nil
 
   for _, message in ipairs(messages) do
-    local text = ColorChatText(message.text, false)
-    message.original(message.frame, text, message.a1, message.a2, message.a3, message.a4, message.a5)
+    -- A coloring/replay error must not prevent later buffered messages from
+    -- being released. If recoloring fails, replay the original text instead.
+    local ok = pcall(function()
+      local text = ColorChatText(message.text, false)
+      message.original(message.frame, text, message.a1, message.a2, message.a3, message.a4, message.a5)
+    end)
+
+    if not ok then
+      pcall(message.original, message.frame, message.text,
+        message.a1, message.a2, message.a3, message.a4, message.a5)
+    end
   end
 end
 

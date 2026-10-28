@@ -7,33 +7,28 @@ local queue = { }
 local whoRequestedName = nil
 local whoRequestedAt = 0
 local WHO_REQUEST_TIMEOUT = 8
-local whoOutputSuppressName = nil
-local whoOutputSuppressUntil = 0
-local whoOutputLineSuppressed = false
-local WHO_OUTPUT_SUPPRESS_WINDOW = 5
+local whoUIHookInstalled = false
 
 local libunitscan = CreateFrame("Frame", "ShaguTweaksUnitScan", UIParent)
 
--- Hide only chat output belonging to this addon's automated WHO request.
--- WHO_LIST_UPDATE is still processed below so the class cache is populated.
-function ShaguTweaks.ShouldSuppressUnitScanWhoMessage(text)
-  if not text or not whoOutputSuppressName or GetTime() > whoOutputSuppressUntil then
-    return false
+-- Quiet automated WHO requests using the native UI result path. Blizzard's
+-- FriendsFrame handler also receives WHO_LIST_UPDATE and can open the Who UI,
+-- so let our own handler process that event while skipping the Blizzard handler
+-- only for the duration of an automated lookup.
+local function InstallWhoUIHook()
+  if whoUIHookInstalled then return true end
+  if type(FriendsFrame_OnEvent) ~= "function" then return false end
+
+  local originalFriendsFrameOnEvent = FriendsFrame_OnEvent
+  FriendsFrame_OnEvent = function(...)
+    if whoRequestedName and event == "WHO_LIST_UPDATE" then
+      return
+    end
+    return originalFriendsFrameOnEvent(...)
   end
 
-  -- Vanilla clients vary the formatting of WHO result lines. Match the
-  -- requested name and level field, rather than requiring a specific separator.
-  if string.find(string.lower(text), string.lower(whoOutputSuppressName), 1, true)
-    and string.find(text, "Level ", 1, true) then
-    whoOutputLineSuppressed = true
-    return true
-  end
-
-  if whoOutputLineSuppressed and string.find(text, "player total", 1, true) then
-    return true
-  end
-
-  return false
+  whoUIHookInstalled = true
+  return true
 end
 
 function ShaguTweaks.GetUnitData(name, active)
@@ -89,11 +84,10 @@ local function FinishWho(found, timedOut)
     end
   end
 
+  -- Always restore normal WHO routing, including timeout and failed lookups.
+  SetWhoToUI(0)
   whoRequestedName = nil
   whoRequestedAt = 0
-  whoOutputSuppressName = nil
-  whoOutputSuppressUntil = 0
-  whoOutputLineSuppressed = false
   if next(queue) then libunitscan:Show() end
 end
 
@@ -105,16 +99,15 @@ local function RequestWho(name)
   if whoRequestedName then
     return false
   end
+  if not InstallWhoUIHook() then
+    return false
+  end
 
-  local now = GetTime()
   whoRequestedName = name
-  whoRequestedAt = now
-  whoOutputSuppressName = name
-  whoOutputSuppressUntil = now + WHO_OUTPUT_SUPPRESS_WINDOW
-  whoOutputLineSuppressed = false
-  -- Do not use SetWhoToUI(1): on Vanilla/Kronos it can open the Who/Friends UI
-  -- for an automated lookup. Keep the normal chat route and suppress its lines.
-  SendWho("n-" .. name)
+  whoRequestedAt = GetTime()
+  -- Route results to WHO_LIST_UPDATE rather than normal WHO chat output.
+  SetWhoToUI(1)
+  SendWho('n-"' .. name .. '"')
   return true
 end
 
@@ -125,7 +118,6 @@ libunitscan:RegisterEvent("RAID_ROSTER_UPDATE")
 libunitscan:RegisterEvent("PARTY_MEMBERS_CHANGED")
 libunitscan:RegisterEvent("PLAYER_TARGET_CHANGED")
 libunitscan:RegisterEvent("WHO_LIST_UPDATE")
-libunitscan:RegisterEvent("CHAT_MSG_SYSTEM")
 libunitscan:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 libunitscan:SetScript("OnEvent", function()
   if event == "PLAYER_ENTERING_WORLD" then
@@ -199,12 +191,6 @@ libunitscan:SetScript("OnEvent", function()
       -- the requested player.
       FinishWho(false)
     end
-
-  elseif event == "CHAT_MSG_SYSTEM" and whoRequestedName and arg1
-    and string.find(arg1, "player total", 1, true) then
-    -- In chat-delivery mode this is the end of the WHO response. Do not read
-    -- GetWhoInfo here: its contents may still belong to an earlier query.
-    FinishWho(false)
 
   elseif event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
     local scan = event == "PLAYER_TARGET_CHANGED" and "target" or "mouseover"

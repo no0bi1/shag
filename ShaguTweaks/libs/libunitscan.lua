@@ -91,8 +91,6 @@ local function FinishWho(found, timedOut)
 
   whoRequestedName = nil
   whoRequestedAt = 0
-  -- Restore normal chat handling after this automated request completes.
-  if SetWhoToUI then SetWhoToUI(0) end
   whoOutputSuppressName = nil
   whoOutputSuppressUntil = 0
   whoOutputLineSuppressed = false
@@ -114,9 +112,8 @@ local function RequestWho(name)
   whoOutputSuppressName = name
   whoOutputSuppressUntil = now + WHO_OUTPUT_SUPPRESS_WINDOW
   whoOutputLineSuppressed = false
-  -- Route this automated query through WHO_LIST_UPDATE instead of letting
-  -- the client print short results directly into chat.
-  if SetWhoToUI then SetWhoToUI(1) end
+  -- Do not use SetWhoToUI(1): on Vanilla/Kronos it can open the Who/Friends UI
+  -- for an automated lookup. Keep the normal chat route and suppress its lines.
   SendWho("n-" .. name)
   return true
 end

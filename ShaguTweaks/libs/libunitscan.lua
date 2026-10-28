@@ -179,12 +179,13 @@ libunitscan:SetScript("OnEvent", function()
       AddData("players", name, class, level)
     end
 
-  elseif event == "WHO_LIST_UPDATE" or event == "CHAT_MSG_SYSTEM" then
+  elseif event == "WHO_LIST_UPDATE" then
     local name, class, level, _
     local matchedRequestedName = false
 
-    -- Cache every returned player, but only treat a result as our lookup when
-    -- its name matches the request currently in flight.
+    -- Only WHO_LIST_UPDATE contains the current structured result set.
+    -- CHAT_MSG_SYSTEM can arrive with stale GetWhoInfo data from a prior query;
+    -- using it here can finish the request before the client's chat lines arrive.
     for i = 1, GetNumWhoResults() do
       name, _, level, _, class, _ = GetWhoInfo(i)
       class = L["class"][class] or nil
@@ -196,14 +197,17 @@ libunitscan:SetScript("OnEvent", function()
 
     if whoRequestedName and matchedRequestedName then
       FinishWho(true)
-    elseif event == "WHO_LIST_UPDATE" and whoRequestedName then
-      -- The UI event is the response path when SetWhoToUI(1) is active.
-      FinishWho(false)
-    elseif event == "CHAT_MSG_SYSTEM" and whoRequestedName and arg1
-      and string.find(arg1, "player total", 1, true) then
-      -- The final system line confirms an empty/no-match response.
+    elseif whoRequestedName then
+      -- SetWhoToUI(1) routed a response to the UI, but it did not contain
+      -- the requested player.
       FinishWho(false)
     end
+
+  elseif event == "CHAT_MSG_SYSTEM" and whoRequestedName and arg1
+    and string.find(arg1, "player total", 1, true) then
+    -- In chat-delivery mode this is the end of the WHO response. Do not read
+    -- GetWhoInfo here: its contents may still belong to an earlier query.
+    FinishWho(false)
 
   elseif event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
     local scan = event == "PLAYER_TARGET_CHANGED" and "target" or "mouseover"

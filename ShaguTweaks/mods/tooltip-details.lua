@@ -141,6 +141,18 @@ local function AddTargetLine(unit)
     return
   end
 
+  -- Tooltip updates can run more than once while Blizzard is still
+  -- populating an NPC tooltip. Avoid appending the same target line twice.
+  local targetLine = "Targeting: " .. target
+  for i = 1, GameTooltip:NumLines() do
+    local line = _G["GameTooltipTextLeft" .. i]
+    local text = line and line:GetText()
+
+    if text and string.find(text, targetLine, 1, true) then
+      return
+    end
+  end
+
   local _, targetClass = UnitClass(targetunit)
   local targetReaction = UnitReaction("player", targetunit)
 

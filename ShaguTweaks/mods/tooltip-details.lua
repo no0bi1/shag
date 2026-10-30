@@ -318,7 +318,7 @@ local function UpdateTooltip()
       end
 
       if title ~= "" then
-        display_name = "|cffaaaaaa" .. title .. " |r" .. display_name
+        display_name = "|cffffffff" .. title .. " |r" .. display_name
       end
 
       GameTooltip:SetText(display_name, 1, 1, 1)

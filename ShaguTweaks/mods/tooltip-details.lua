@@ -328,23 +328,26 @@ local function UpdateTooltip()
         title = string.gsub(pvpname, " " .. name, "", 1)
       end
 
+      -- Preserve the original class-color treatment for the character
+      -- name, while keeping the PvP title grey on the same line.
+      local color = class and RAID_CLASS_COLORS[class]
       local display_name = name
+
       if title ~= "" then
-        display_name = title .. " " .. name
+        display_name = "|cffaaaaaa" .. title .. " |r" .. name
       end
 
-      -- Original-expansion tooltips use a white name, with the PvP title
-      -- prefixed on the same line rather than shown as a separate line.
-      GameTooltip:SetText(display_name, 1, 1, 1)
+      if color then
+        GameTooltip:SetText(
+          display_name,
+          color.r, color.g, color.b
+        )
 
-      -- Keep the unit's class color on the health bar, not the name.
-      if class then
-        local color = RAID_CLASS_COLORS[class]
-        if color then
-          GameTooltipStatusBar:SetStatusBarColor_orig(
-            color.r, color.g, color.b
-          )
-        end
+        GameTooltipStatusBar:SetStatusBarColor_orig(
+          color.r, color.g, color.b
+        )
+      else
+        GameTooltip:SetText(display_name, 1, 1, 1)
       end
 
       AddRaceClassLine(unit)

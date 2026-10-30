@@ -369,6 +369,9 @@ local function UpdateTooltip()
           )
         end
       end
+
+      -- Retain the existing target detail for NPC tooltips.
+      AddTargetLine(unit)
     end
   end
 

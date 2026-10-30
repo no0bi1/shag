@@ -141,48 +141,41 @@ local function AddTargetLine(unit)
     return
   end
 
-  -- Tooltip updates can run more than once while Blizzard is still
-  -- populating an NPC tooltip. Avoid appending the same target line twice.
-  local targetLine = "Targeting: " .. target
+  -- Avoid adding the same target line more than once.
   for i = 1, GameTooltip:NumLines() do
     local line = _G["GameTooltipTextLeft" .. i]
     local text = line and line:GetText()
 
-    if text and string.find(text, targetLine, 1, true) then
+    if text
+      and string.find(text, "Targeting:", 1, true)
+      and string.find(text, target, 1, true) then
       return
     end
   end
 
+  -- Keep the label white; apply the unit color only to the target name.
+  local color
   local _, targetClass = UnitClass(targetunit)
   local targetReaction = UnitReaction("player", targetunit)
 
   if UnitIsPlayer(targetunit) and targetClass then
-    local color = RAID_CLASS_COLORS[targetClass]
-
-    if color then
-      GameTooltip:AddLine(
-        "Targeting: " .. target,
-        color.r, color.g, color.b
-      )
-      return
-    end
+    color = RAID_CLASS_COLORS[targetClass]
   end
 
-  if targetReaction then
-    local color = UnitReactionColor[targetReaction]
+  if not color and targetReaction then
+    color = UnitReactionColor[targetReaction]
+  end
 
-    if color then
-      GameTooltip:AddLine(
-        "Targeting: " .. target,
-        color.r, color.g, color.b
-      )
-      return
-    end
+  local targetColor
+  if color then
+    targetColor = rgbhex(color.r, color.g, color.b, color.a)
+  else
+    targetColor = rgbhex(0.8, 0.8, 0.8, 1)
   end
 
   GameTooltip:AddLine(
-    "Targeting: " .. target,
-    0.8, 0.8, 0.8
+    "|cffffffffTargeting: |r" .. targetColor .. target .. "|r",
+    1, 1, 1
   )
 end
 

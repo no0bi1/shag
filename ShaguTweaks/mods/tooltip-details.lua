@@ -328,27 +328,28 @@ local function UpdateTooltip()
         title = string.gsub(pvpname, " " .. name, "", 1)
       end
 
-      -- Preserve the original class-color treatment for the character
-      -- name, while keeping the PvP title grey on the same line.
+      -- Color the title and character name independently. SetText's
+      -- color arguments tint the entire line, so use inline color codes.
       local color = class and RAID_CLASS_COLORS[class]
       local display_name = name
 
-      if title ~= "" then
-        display_name = "|cffaaaaaa" .. title .. " |r" .. name
-      end
-
       if color then
-        GameTooltip:SetText(
-          display_name,
-          color.r, color.g, color.b
-        )
+        display_name = rgbhex(
+          color.r, color.g, color.b, color.a
+        ) .. name .. "|r"
 
         GameTooltipStatusBar:SetStatusBarColor_orig(
           color.r, color.g, color.b
         )
       else
-        GameTooltip:SetText(display_name, 1, 1, 1)
+        display_name = "|cffffffff" .. name .. "|r"
       end
+
+      if title ~= "" then
+        display_name = "|cffaaaaaa" .. title .. " |r" .. display_name
+      end
+
+      GameTooltip:SetText(display_name, 1, 1, 1)
 
       AddRaceClassLine(unit)
       AddGuildLine(unit)

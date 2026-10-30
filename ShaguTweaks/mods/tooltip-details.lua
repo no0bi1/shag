@@ -187,34 +187,6 @@ local function AddTargetLine(unit)
 end
 
 --------------------------------------------------
--- Guild line
---------------------------------------------------
-
-local function AddGuildLine(unit)
-  local guild, rankstr, rankid = GetGuildInfo(unit)
-
-  if not guild then
-    return
-  end
-
-  local rank = ""
-  local lead = ""
-
-  if rankstr then
-    rank = " |cffaaaaaa(" .. rankstr .. ")"
-  end
-
-  if rankid == 0 then
-    lead = "|cffffcc00*|r"
-  end
-
-  GameTooltip:AddLine(
-    "<" .. guild .. ">" .. lead .. rank,
-    0.3, 1, 0.5
-  )
-end
-
---------------------------------------------------
 -- PvP title
 --------------------------------------------------
 
@@ -352,7 +324,6 @@ local function UpdateTooltip()
       GameTooltip:SetText(display_name, 1, 1, 1)
 
       AddRaceClassLine(unit)
-      AddGuildLine(unit)
       AddTargetLine(unit)
     end
 

@@ -267,7 +267,7 @@ local function AddRaceClassLine(unit)
   end
 
   if text ~= "" then
-    GameTooltip:AddLine(text, 1, 1, 1)
+    GameTooltip:AddLine(text .. " (Player)", 1, 1, 1)
   end
 end
 
@@ -314,77 +314,61 @@ local function UpdateTooltip()
   end
 
   ------------------------------------------------
-  -- Compact tooltip: players only
+  -- Blizzard original-expansion player tooltip layout
   ------------------------------------------------
 
-  if target_frame_tooltip and UnitIsPlayer(unit) then
+  if UnitIsPlayer(unit) then
     GameTooltip:ClearLines()
 
     if name then
-      local color = class and RAID_CLASS_COLORS[class]
+      local pvpname = UnitPVPName(unit)
+      local title = ""
 
-      if color then
-        GameTooltip:SetText(
-          name,
-          color.r, color.g, color.b
-        )
+      if pvpname and pvpname ~= name then
+        title = string.gsub(pvpname, " " .. name, "", 1)
+      end
 
-        GameTooltipStatusBar:SetStatusBarColor_orig(
-          color.r, color.g, color.b
-        )
-      else
-        GameTooltip:SetText(name, 1, 1, 1)
+      local display_name = name
+      if title ~= "" then
+        display_name = title .. " " .. name
+      end
+
+      -- Original-expansion tooltips use a white name, with the PvP title
+      -- prefixed on the same line rather than shown as a separate line.
+      GameTooltip:SetText(display_name, 1, 1, 1)
+
+      -- Keep the unit's class color on the health bar, not the name.
+      if class then
+        local color = RAID_CLASS_COLORS[class]
+        if color then
+          GameTooltipStatusBar:SetStatusBarColor_orig(
+            color.r, color.g, color.b
+          )
+        end
       end
 
       AddRaceClassLine(unit)
-      AddPvPTitle(unit, name)
       AddGuildLine(unit)
       AddTargetLine(unit)
     end
 
   ------------------------------------------------
-  -- Original tooltip: NPCs and ordinary tooltips
+  -- Preserve Blizzard's original NPC tooltip
   ------------------------------------------------
 
   else
-    -- Do not clear or rebuild the original NPC tooltip.
-    -- Only modify the name color for players.
     if name then
-      if UnitIsPlayer(unit) and class then
-        local color = RAID_CLASS_COLORS[class]
+      local reaction = UnitReaction(unit, "player")
+
+      if reaction then
+        local color = UnitReactionColor[reaction]
 
         if color then
           GameTooltipStatusBar:SetStatusBarColor_orig(
             color.r, color.g, color.b
           )
-
-          GameTooltipTextLeft1:SetText(
-            rgbhex(color.r, color.g, color.b, color.a) .. name
-          )
-        else
-          GameTooltipTextLeft1:SetText(
-            "|cff999999" .. name .. "|r"
-          )
-        end
-
-      else
-        -- Preserve NPC name and its original tooltip text.
-        local reaction = UnitReaction(unit, "player")
-
-        if reaction then
-          local color = UnitReactionColor[reaction]
-
-          if color then
-            GameTooltipStatusBar:SetStatusBarColor_orig(
-              color.r, color.g, color.b
-            )
-          end
         end
       end
-
-      AddPvPTitle(unit, name)
-      AddGuildLine(unit)
-      AddTargetLine(unit)
     end
   end
 
@@ -422,11 +406,11 @@ module.enable = function(self)
   GameTooltipStatusBar:ClearAllPoints()
 
   GameTooltipStatusBar:SetPoint(
-    "BOTTOMLEFT", GameTooltip, "TOPLEFT", 4, 2
+    "TOPLEFT", GameTooltip, "BOTTOMLEFT", 4, -2
   )
 
   GameTooltipStatusBar:SetPoint(
-    "BOTTOMRIGHT", GameTooltip, "TOPRIGHT", -4, 2
+    "TOPRIGHT", GameTooltip, "BOTTOMRIGHT", -4, -2
   )
 
   GameTooltipStatusBar.bg =

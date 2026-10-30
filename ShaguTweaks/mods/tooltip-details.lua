@@ -384,11 +384,11 @@ module.enable = function(self)
   GameTooltipStatusBar:ClearAllPoints()
 
   GameTooltipStatusBar:SetPoint(
-    "TOPLEFT", GameTooltip, "BOTTOMLEFT", 4, -2
+    "BOTTOMLEFT", GameTooltip, "TOPLEFT", 4, 2
   )
 
   GameTooltipStatusBar:SetPoint(
-    "TOPRIGHT", GameTooltip, "BOTTOMRIGHT", -4, -2
+    "BOTTOMRIGHT", GameTooltip, "TOPRIGHT", -4, 2
   )
 
   GameTooltipStatusBar.bg =

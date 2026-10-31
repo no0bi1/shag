@@ -457,6 +457,46 @@ module.enable = function(self)
 
   ---------------------------------------------------------------- display
 
+  local function AddHeader(tooltip)
+    local name = tooltip:GetName()
+
+    -- shift all entries one line down
+    for i=tooltip:NumLines(), 1, -1 do
+      for _, side in pairs(sides) do
+        local current = _G[name.."Text"..side..i]
+        local below = _G[name.."Text"..side..i+1]
+
+        if current and current:IsShown() then
+          local text = current:GetText()
+          local r, g, b = current:GetTextColor()
+
+          if text and text ~= "" then
+            if tooltip:NumLines() < i+1 then
+              -- add new line if required
+              tooltip:AddLine(text, r, g, b, true)
+            else
+              -- update existing lines
+              below:SetText(text)
+              below:SetTextColor(r, g, b)
+              below:Show()
+
+              -- hide processed line
+              current:Hide()
+            end
+          end
+        end
+      end
+    end
+
+    -- add label to first line
+    _G[name.."TextLeft1"]:SetTextColor(.5, .5, .5, 1)
+    _G[name.."TextLeft1"]:SetText(CURRENTLY_EQUIPPED)
+    _G[name.."TextLeft1"]:Show()
+
+    -- update tooltip sizes
+    tooltip:Show()
+  end
+
   ShoppingTooltip1:SetClampedToScreen(true)
   ShoppingTooltip2:SetClampedToScreen(true)
   local tips = { ShoppingTooltip1, ShoppingTooltip2 }
@@ -513,73 +553,6 @@ module.enable = function(self)
     end
   end
 
-  -- forward declaration: Fill uses AddWrapped before its implementation below
-  local AddWrapped
-
-  -- hidden font string with the tooltip font, used to measure text in pixels
-  local meter = UIParent:CreateFontString(nil, "OVERLAY", "GameTooltipText")
-  meter:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
-  meter:Show()
-
-  -- word-wrap text to `limit` pixels, keeping the |cffxxxxxx ... |r colour on every line
-  local function Wrap(text, limit)
-    local out = {}
-    local _, _, col, body = strfind(text, "^(|c%x%x%x%x%x%x%x%x)(.-)|r$")
-    if not col then col, body = "", text end
-    local tail = (col ~= "") and "|r" or ""
-
-    local line = ""
-    for word in gfind(body, "%S+") do
-      local try = (line == "") and word or (line .. " " .. word)
-      meter:SetText(try)
-      if line ~= "" and meter:GetStringWidth() > limit then
-        tinsert(out, col .. line .. tail)
-        line = word
-      else
-        line = try
-      end
-    end
-    if line ~= "" then tinsert(out, col .. line .. tail) end
-    return out
-  end
-
-  AddWrapped = function(tip, text, limit, r, g, b)
-    local lines = Wrap(text, limit)
-    for i = 1, getn(lines) do
-      tip:AddLine(lines[i], r or 1, g or 1, b or 1, false)
-    end
-  end
-
-  -- rebuild the equipped item's tooltip into `tip`, wrapped to `limit` pixels,
-  -- with the "Currently equipped" label on top (no line shifting)
-  local function Fill(tip, slotName, limit)
-    local id = SlotID(slotName)
-    scan:SetOwner(WorldFrame, "ANCHOR_NONE")
-    scan:ClearLines()
-    scan:SetInventoryItem("player", id)
-
-    tip:ClearLines()
-    tip:AddLine(CURRENTLY_EQUIPPED, .5, .5, .5, false)
-
-    local sname = scan:GetName()
-    for i = 1, scan:NumLines() do
-      local l = _G[sname .. "TextLeft" .. i]
-      local r = _G[sname .. "TextRight" .. i]
-      local text = l and l:GetText()
-      local rtext = r and r:IsShown() and r:GetText()
-
-      if text then
-        local lr, lg, lb = l:GetTextColor()
-        if rtext and rtext ~= "" then
-          local rr, rg, rb = r:GetTextColor()
-          tip:AddDoubleLine(text, rtext, lr, lg, lb, rr, rg, rb)
-        else
-          AddWrapped(tip, text, limit, lr, lg, lb)
-        end
-      end
-    end
-  end
-
   local function Render(tooltip, shown, new)
     local count = getn(shown)
     if count > 2 then count = 2 end
@@ -589,11 +562,9 @@ module.enable = function(self)
       tip:SetOwner(tooltip, "ANCHOR_NONE")
       tip:ClearAllPoints()
       tip:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-
-      -- width limit = the hovered tooltip's width (minus 10px padding each side)
-      local limit = max(tooltip:GetWidth() * tooltip:GetEffectiveScale() / tip:GetEffectiveScale() - 20, 150)
-
-      Fill(tip, sh.slot, limit)
+      tip:SetInventoryItem("player", SlotID(sh.slot))
+      tip:Show()
+      AddHeader(tip)
 
       -- the change list, only when something actually changes
       if sh.stats then
@@ -601,14 +572,14 @@ module.enable = function(self)
         if getn(lines) > 0 then
           tip:AddLine(" ")
           if sh.plural then
-            AddWrapped(tip, T["If you replace these items, the following stat changes will occur:"], limit, 1, .82, 0)
+            tip:AddLine(T["If you replace these items, the following stat changes will occur:"], 1, .82, 0, true)
           else
-            AddWrapped(tip, T["If you replace this item, the following stat changes will occur:"], limit, 1, .82, 0)
+            tip:AddLine(T["If you replace this item, the following stat changes will occur:"], 1, .82, 0, true)
           end
-          for m = 1, getn(lines) do AddWrapped(tip, lines[m], limit, 1, 1, 1) end
+          for m = 1, getn(lines) do tip:AddLine(lines[m], 1, 1, 1, true) end
+          tip:Show()
         end
       end
-      tip:Show()
     end
 
     for i = count + 1, 2 do tips[i]:Hide() end

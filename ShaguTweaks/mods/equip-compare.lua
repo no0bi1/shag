@@ -10,7 +10,6 @@ local module = ShaguTweaks:register({
 })
 
 module.enable = function(self)
-  local sides = { "Left", "Right" }
   local GREEN, RED = "|cff20ff20", "|cffff4040"
   local EQUIP = ITEM_SPELL_TRIGGER_ONEQUIP or "Equip:"
 
@@ -457,43 +456,54 @@ module.enable = function(self)
 
   ---------------------------------------------------------------- display
 
+  -- invisible fontstring used only to measure text width
+  local probe = UIParent:CreateFontString(nil, "ARTWORK", "GameTooltipText")
+  probe:SetAlpha(0)
+  local MAXW = 250 -- lines wider than this wrap to the tooltip's natural width
+
   local function AddHeader(tooltip)
     local name = tooltip:GetName()
 
-    -- shift all entries one line down
-    for i=tooltip:NumLines(), 1, -1 do
-      for _, side in pairs(sides) do
-        local current = _G[name.."Text"..side..i]
-        local below = _G[name.."Text"..side..i+1]
-
-        if current and current:IsShown() then
-          local text = current:GetText()
-          local r, g, b = current:GetTextColor()
-
-          if text and text ~= "" then
-            if tooltip:NumLines() < i+1 then
-              -- add new line if required
-              tooltip:AddLine(text, r, g, b, true)
-            else
-              -- update existing lines
-              below:SetText(text)
-              below:SetTextColor(r, g, b)
-              below:Show()
-
-              -- hide processed line
-              current:Hide()
-            end
-          end
+    -- Snapshot the original lines before rebuilding the tooltip.
+    -- Wrapping belongs to each destination FontString, so shifted lines
+    -- must be added again with the appropriate wrap flag.
+    local snap = {}
+    for i = 1, tooltip:NumLines() do
+      local l = _G[name .. "TextLeft" .. i]
+      local r = _G[name .. "TextRight" .. i]
+      local lt = l and l:GetText()
+      local rt = r and r:IsShown() and r:GetText()
+      if (lt and lt ~= "") or (rt and rt ~= "") then
+        local e = {}
+        if lt and lt ~= "" then
+          e.lt = lt
+          e.lr, e.lg, e.lb = l:GetTextColor()
         end
+        if rt and rt ~= "" then
+          e.rt = rt
+          e.rr, e.rg, e.rb = r:GetTextColor()
+        end
+        tinsert(snap, e)
       end
     end
 
-    -- add label to first line
-    _G[name.."TextLeft1"]:SetTextColor(.5, .5, .5, 1)
-    _G[name.."TextLeft1"]:SetText(CURRENTLY_EQUIPPED)
-    _G[name.."TextLeft1"]:Show()
+    -- Rebuild with the header first, then restore the original content.
+    tooltip:ClearLines()
+    tooltip:AddLine(CURRENTLY_EQUIPPED, .5, .5, .5)
 
-    -- update tooltip sizes
+    for i = 1, getn(snap) do
+      local e = snap[i]
+      if e.rt then
+        tooltip:AddDoubleLine(e.lt or "", e.rt,
+          e.lr or 1, e.lg or 1, e.lb or 1,
+          e.rr or 1, e.rg or 1, e.rb or 1)
+      else
+        probe:SetText(e.lt)
+        local wrap = probe:GetStringWidth() > MAXW
+        tooltip:AddLine(e.lt, e.lr, e.lg, e.lb, wrap)
+      end
+    end
+
     tooltip:Show()
   end
 

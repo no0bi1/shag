@@ -158,10 +158,10 @@ module.enable = function(self)
   }
 
   local function NewStats()
-    return { fx = {}, order = {}, gen = {} }
+    return { fx = {}, order = {}, gen = {}, pct = {} }
   end
 
-  local function AddFx(s, label, val, generic)
+  local function AddFx(s, label, val, generic, pct)
     if s.fx[label] then
       s.fx[label] = s.fx[label] + val
     else
@@ -169,6 +169,7 @@ module.enable = function(self)
       tinsert(s.order, label)
     end
     if generic then s.gen[label] = true end
+    if pct then s.pct[label] = true end
   end
 
   local function BaseKey(label)
@@ -177,15 +178,6 @@ module.enable = function(self)
     local _, _, school = strfind(label, "^(%a+) Resistance$")
     if school then return RES[school] end
     return nil
-  end
-
-  -- on-use and proc lines are not passive stats, never compare them
-  local USE  = ITEM_SPELL_TRIGGER_ONUSE or "Use:"
-  local PROC = ITEM_SPELL_TRIGGER_ONPROC or "Chance on hit:"
-
-  local function IsTrigger(text)
-    return strsub(text, 1, strlen(USE)) == USE
-        or strsub(text, 1, strlen(PROC)) == PROC
   end
 
   local function Parse(tooltip)
@@ -200,7 +192,7 @@ module.enable = function(self)
       local text = l and l:GetText()
       local rtext = r and r:IsShown() and r:GetText()
 
-      if text and not IsTrigger(text) then
+      if text then
         if strsub(text, 1, prefix) == EQUIP .. " " then
           local sentence = strsub(text, prefix + 1)
           local _, _, sign, num = strfind(sentence, "([%+%-]?)([%d%.]*%d)")
@@ -213,15 +205,29 @@ module.enable = function(self)
             AddFx(s, key, val, true)
           end
         else
-          local _, _, sign, n, label = strfind(text, "^([%+%-]?)(%d+) (%a[^%d]*)$")
-          if n then
-            local val = tonumber(n)
+          -- any "<number> <words>" or "<words> +<number>" line is a stat, whatever the words are:
+          -- "+5 Stamina", "9 Block", "+1% Dodge", "+4 mana every 5 sec", "Defense +3", "Fire Resistance: +10"
+          local sign, num, pct, label
+          local _, _, sg, nm, pc, lb = strfind(text, "^([%+%-]?)([%d%.]*%d)(%%?) (%a.*)$")
+          if nm and (sg ~= "" or not strfind(lb, "%d")) then
+            sign, num, pct, label = sg, nm, pc, lb
+          else
+            local _, _, lb2, sg2, nm2, pc2 = strfind(text, "^(%a[^%d]-):? ([%+%-])([%d%.]*%d)(%%?)$")
+            if nm2 then sign, num, pct, label = sg2, nm2, pc2, lb2 end
+          end
+
+          if num then
+            local val = tonumber(num)
             if sign == "-" then val = -val end
+            label = gsub(label, "[%.:%s]+$", "")
+            local low = strlower(label)
             local bk = BaseKey(label)
             if bk then
               s[bk] = (s[bk] or 0) + val
-            else
-              local low = strlower(label)
+            elseif low == "all stats" or low == "to all stats" then
+              local all = { "str", "agi", "sta", "int", "spi" }
+              for i2 = 1, getn(all) do s[all[i2]] = (s[all[i2]] or 0) + val end
+            elseif low ~= "charges" and low ~= "charge" then
               local _, _, sch = strfind(low, "^(%a+) spell damage$")
               if not sch then _, _, sch = strfind(low, "^(%a+) damage$") end
               if sch and SCHOOLS[sch] then
@@ -230,12 +236,12 @@ module.enable = function(self)
               elseif ALIAS[low] then
                 AddFx(s, ALIAS[low], val, true)
               else
-                AddFx(s, label, val, false)
+                AddFx(s, label, val, false, pct == "%")
               end
             end
           end
 
-          local _, _, a, b = strfind(text, "^(%d+) %- (%d+) Damage$")
+          local _, _, a, b = strfind(text, "^(%d+) %- (%d+) %a* ?Damage$")
           if a then dmin, dmax = tonumber(a), tonumber(b) end
           if rtext then
             local _, _, sp = strfind(rtext, "^Speed ([%d%.]+)$")
@@ -262,7 +268,7 @@ module.enable = function(self)
       local t = src[n]
       for i = 1, getn(t.order) do
         local label = t.order[i]
-        AddFx(s, label, t.fx[label], t.gen[label])
+        AddFx(s, label, t.fx[label], t.gen[label], t.pct[label])
       end
     end
     return s
@@ -274,7 +280,7 @@ module.enable = function(self)
   --   "Increases attack power by #."       -> "+5 Attack power"
   --   "Improves your chance to hit by #%." -> "+1% Hit"
   -- Anything that doesn't fit these shapes returns nil and the full sentence is shown.
-  local VERBS = { "Increases your ", "Increases ", "Improves your ", "Improves ", "Restores ", "Increased " }
+  local VERBS = { "Increases your ", "Increases ", "Improves your ", "Improves ", "Restores ", "Increased ", "Adds ", "Grants ", "Gives " }
 
   -- plain-English filler to drop from the label (edit/add to taste)
   local FILLER = {
@@ -357,7 +363,8 @@ module.enable = function(self)
                 tinsert(out, col .. EQUIP .. " " .. gsub(label, "#", n1, 1) .. "|r")
               end
             else
-              tinsert(out, col .. n1 .. " " .. label .. "|r")
+              local pct = new.pct[label] or old.pct[label]
+              tinsert(out, col .. n1 .. (pct and "%" or "") .. " " .. label .. "|r")
             end
           end
         end
@@ -546,38 +553,6 @@ module.enable = function(self)
     end
   end
 
-  -- hidden font string using the tooltip font, only used to measure text
-  local meter = UIParent:CreateFontString(nil, "OVERLAY", "GameTooltipText")
-  meter:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -5000, 0)
-  meter:SetAlpha(0)
-
-  local function Wrap(text, maxw)
-    local out, cur = {}, ""
-    for word in string.gfind(text, "%S+") do
-      local try = (cur == "") and word or (cur .. " " .. word)
-      meter:SetText(try)
-      if cur ~= "" and meter:GetStringWidth() > maxw then
-        tinsert(out, cur)
-        cur = "  " .. word -- indent continuation lines
-      else
-        cur = try
-      end
-    end
-    if cur ~= "" then tinsert(out, cur) end
-    return out
-  end
-
-  -- adds a (possibly color-coded) line, wrapped to maxw
-  local function AddWrapped(tip, line, maxw, r, g, b)
-    local _, _, col, body = strfind(line, "^(|c%x%x%x%x%x%x%x%x)(.*)|r$")
-    local parts = Wrap(body or line, maxw)
-    for i = 1, getn(parts) do
-      local t = parts[i]
-      if col then t = col .. t .. "|r" end
-      tip:AddLine(t, r, g, b, false)
-    end
-  end
-
   local function Render(tooltip, shown, new)
     local count = getn(shown)
     if count > 2 then count = 2 end
@@ -595,16 +570,13 @@ module.enable = function(self)
       if sh.stats then
         local lines = Diff(new, sh.stats)
         if getn(lines) > 0 then
-          -- width of the equipped item's tooltip before we add anything (minus border padding)
-          local maxw = tip:GetWidth() - 20
-          if maxw < 120 then maxw = 120 end
-
           tip:AddLine(" ")
-          local head = sh.plural
-            and T["If you replace these items, the following stat changes will occur:"]
-            or T["If you replace this item, the following stat changes will occur:"]
-          AddWrapped(tip, head, maxw, 1, .82, 0)
-          for m = 1, getn(lines) do AddWrapped(tip, lines[m], maxw, 1, 1, 1) end
+          if sh.plural then
+            tip:AddLine(T["If you replace these items, the following stat changes will occur:"], 1, .82, 0, true)
+          else
+            tip:AddLine(T["If you replace this item, the following stat changes will occur:"], 1, .82, 0, true)
+          end
+          for m = 1, getn(lines) do tip:AddLine(lines[m], 1, 1, 1, true) end
           tip:Show()
         end
       end
@@ -634,7 +606,7 @@ module.enable = function(self)
   local function OnPaperdoll()
     local f = GetMouseFocus()
     local n = f and f:GetName()
-    return n and strfind(n, "^Character%a+Slot$") and true or false
+    return n and strfind(n, "^Character.+Slot$") and true or false
   end
 
   local state = { sig = nil, count = 0, lines = 0, lines2 = 0 }
@@ -710,7 +682,7 @@ module.enable = function(self)
     local atlas = CreateFrame("Frame", nil, AtlasLootTooltip)
     atlas:SetScript("OnUpdate", function()
       ShowCompare(AtlasLootTooltip)
-      ShowCompare(AtlasLootTooltip2)
+      if AtlasLootTooltip2 then ShowCompare(AtlasLootTooltip2) end
     end)
   end)
 end

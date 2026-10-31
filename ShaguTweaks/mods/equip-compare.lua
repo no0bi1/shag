@@ -179,6 +179,15 @@ module.enable = function(self)
     return nil
   end
 
+  -- on-use and proc lines are not passive stats, never compare them
+  local USE  = ITEM_SPELL_TRIGGER_ONUSE or "Use:"
+  local PROC = ITEM_SPELL_TRIGGER_ONPROC or "Chance on hit:"
+
+  local function IsTrigger(text)
+    return strsub(text, 1, strlen(USE)) == USE
+        or strsub(text, 1, strlen(PROC)) == PROC
+  end
+
   local function Parse(tooltip)
     local name = tooltip:GetName()
     local s = NewStats()
@@ -191,7 +200,7 @@ module.enable = function(self)
       local text = l and l:GetText()
       local rtext = r and r:IsShown() and r:GetText()
 
-      if text then
+      if text and not IsTrigger(text) then
         if strsub(text, 1, prefix) == EQUIP .. " " then
           local sentence = strsub(text, prefix + 1)
           local _, _, sign, num = strfind(sentence, "([%+%-]?)([%d%.]*%d)")
@@ -537,6 +546,38 @@ module.enable = function(self)
     end
   end
 
+  -- hidden font string using the tooltip font, only used to measure text
+  local meter = UIParent:CreateFontString(nil, "OVERLAY", "GameTooltipText")
+  meter:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -5000, 0)
+  meter:SetAlpha(0)
+
+  local function Wrap(text, maxw)
+    local out, cur = {}, ""
+    for word in string.gfind(text, "%S+") do
+      local try = (cur == "") and word or (cur .. " " .. word)
+      meter:SetText(try)
+      if cur ~= "" and meter:GetStringWidth() > maxw then
+        tinsert(out, cur)
+        cur = "  " .. word -- indent continuation lines
+      else
+        cur = try
+      end
+    end
+    if cur ~= "" then tinsert(out, cur) end
+    return out
+  end
+
+  -- adds a (possibly color-coded) line, wrapped to maxw
+  local function AddWrapped(tip, line, maxw, r, g, b)
+    local _, _, col, body = strfind(line, "^(|c%x%x%x%x%x%x%x%x)(.*)|r$")
+    local parts = Wrap(body or line, maxw)
+    for i = 1, getn(parts) do
+      local t = parts[i]
+      if col then t = col .. t .. "|r" end
+      tip:AddLine(t, r, g, b, false)
+    end
+  end
+
   local function Render(tooltip, shown, new)
     local count = getn(shown)
     if count > 2 then count = 2 end
@@ -554,13 +595,16 @@ module.enable = function(self)
       if sh.stats then
         local lines = Diff(new, sh.stats)
         if getn(lines) > 0 then
+          -- width of the equipped item's tooltip before we add anything (minus border padding)
+          local maxw = tip:GetWidth() - 20
+          if maxw < 120 then maxw = 120 end
+
           tip:AddLine(" ")
-          if sh.plural then
-            tip:AddLine(T["If you replace these items, the following stat changes will occur:"], 1, .82, 0, true)
-          else
-            tip:AddLine(T["If you replace this item, the following stat changes will occur:"], 1, .82, 0, true)
-          end
-          for m = 1, getn(lines) do tip:AddLine(lines[m], 1, 1, 1, true) end
+          local head = sh.plural
+            and T["If you replace these items, the following stat changes will occur:"]
+            or T["If you replace this item, the following stat changes will occur:"]
+          AddWrapped(tip, head, maxw, 1, .82, 0)
+          for m = 1, getn(lines) do AddWrapped(tip, lines[m], maxw, 1, 1, 1) end
           tip:Show()
         end
       end

@@ -553,6 +553,40 @@ module.enable = function(self)
     end
   end
 
+  -- hidden font string with the tooltip font, used to measure text in pixels
+  local meter = UIParent:CreateFontString(nil, "OVERLAY", "GameTooltipText")
+  meter:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
+  meter:Show()
+
+  -- word-wrap text to `limit` pixels, keeping the |cffxxxxxx ... |r colour on every line
+  local function Wrap(text, limit)
+    local out = {}
+    local _, _, col, body = strfind(text, "^(|c%x%x%x%x%x%x%x%x)(.-)|r$")
+    if not col then col, body = "", text end
+    local tail = (col ~= "") and "|r" or ""
+
+    local line = ""
+    for word in gfind(body, "%S+") do
+      local try = (line == "") and word or (line .. " " .. word)
+      meter:SetText(try)
+      if line ~= "" and meter:GetStringWidth() > limit then
+        tinsert(out, col .. line .. tail)
+        line = word
+      else
+        line = try
+      end
+    end
+    if line ~= "" then tinsert(out, col .. line .. tail) end
+    return out
+  end
+
+  local function AddWrapped(tip, text, limit, r, g, b)
+    local lines = Wrap(text, limit)
+    for i = 1, getn(lines) do
+      tip:AddLine(lines[i], r or 1, g or 1, b or 1, false) -- already wrapped, so no client wrapping
+    end
+  end
+
   local function Render(tooltip, shown, new)
     local count = getn(shown)
     if count > 2 then count = 2 end
@@ -570,13 +604,17 @@ module.enable = function(self)
       if sh.stats then
         local lines = Diff(new, sh.stats)
         if getn(lines) > 0 then
+          -- the width the client gave this tooltip from the equipped item's own text
+          -- (10px padding on each side)
+          local limit = max(tip:GetWidth() - 20, 100)
+
           tip:AddLine(" ")
           if sh.plural then
-            tip:AddLine(T["If you replace these items, the following stat changes will occur:"], 1, .82, 0, true)
+            AddWrapped(tip, T["If you replace these items, the following stat changes will occur:"], limit, 1, .82, 0)
           else
-            tip:AddLine(T["If you replace this item, the following stat changes will occur:"], 1, .82, 0, true)
+            AddWrapped(tip, T["If you replace this item, the following stat changes will occur:"], limit, 1, .82, 0)
           end
-          for m = 1, getn(lines) do tip:AddLine(lines[m], 1, 1, 1, true) end
+          for m = 1, getn(lines) do AddWrapped(tip, lines[m], limit, 1, 1, 1) end
           tip:Show()
         end
       end

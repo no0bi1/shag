@@ -513,6 +513,9 @@ module.enable = function(self)
     end
   end
 
+  -- forward declaration: Fill uses AddWrapped before its implementation below
+  local AddWrapped
+
   -- hidden font string with the tooltip font, used to measure text in pixels
   local meter = UIParent:CreateFontString(nil, "OVERLAY", "GameTooltipText")
   meter:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -2000, -2000)
@@ -540,7 +543,7 @@ module.enable = function(self)
     return out
   end
 
-  local function AddWrapped(tip, text, limit, r, g, b)
+  AddWrapped = function(tip, text, limit, r, g, b)
     local lines = Wrap(text, limit)
     for i = 1, getn(lines) do
       tip:AddLine(lines[i], r or 1, g or 1, b or 1, false)

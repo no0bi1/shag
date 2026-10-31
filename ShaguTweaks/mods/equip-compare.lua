@@ -457,37 +457,6 @@ module.enable = function(self)
 
   ---------------------------------------------------------------- display
 
-  -- rebuild the equipped item's tooltip into `tip`, wrapped to `limit` pixels,
-  -- with the "Currently equipped" label on top (no line shifting)
-  local function Fill(tip, slotName, limit)
-    local id = SlotID(slotName)
-    scan:SetOwner(WorldFrame, "ANCHOR_NONE")
-    scan:ClearLines()
-    scan:SetInventoryItem("player", id)
-
-    tip:ClearLines()
-    tip:AddLine(CURRENTLY_EQUIPPED, .5, .5, .5, false)
-
-    local sname = scan:GetName()
-    for i = 1, scan:NumLines() do
-      local l = _G[sname .. "TextLeft" .. i]
-      local r = _G[sname .. "TextRight" .. i]
-      local text = l and l:GetText()
-      local rtext = r and r:IsShown() and r:GetText()
-
-      if text then
-        local lr, lg, lb = l:GetTextColor()
-        if rtext and rtext ~= "" then
-          -- left/right pair (slot + armor type, damage + speed): never wrapped
-          local rr, rg, rb = r:GetTextColor()
-          tip:AddDoubleLine(text, rtext, lr, lg, lb, rr, rg, rb)
-        else
-          AddWrapped(tip, text, limit, lr, lg, lb)
-        end
-      end
-    end
-  end
-
   ShoppingTooltip1:SetClampedToScreen(true)
   ShoppingTooltip2:SetClampedToScreen(true)
   local tips = { ShoppingTooltip1, ShoppingTooltip2 }
@@ -574,7 +543,37 @@ module.enable = function(self)
   local function AddWrapped(tip, text, limit, r, g, b)
     local lines = Wrap(text, limit)
     for i = 1, getn(lines) do
-      tip:AddLine(lines[i], r or 1, g or 1, b or 1, false) -- already wrapped, so no client wrapping
+      tip:AddLine(lines[i], r or 1, g or 1, b or 1, false)
+    end
+  end
+
+  -- rebuild the equipped item's tooltip into `tip`, wrapped to `limit` pixels,
+  -- with the "Currently equipped" label on top (no line shifting)
+  local function Fill(tip, slotName, limit)
+    local id = SlotID(slotName)
+    scan:SetOwner(WorldFrame, "ANCHOR_NONE")
+    scan:ClearLines()
+    scan:SetInventoryItem("player", id)
+
+    tip:ClearLines()
+    tip:AddLine(CURRENTLY_EQUIPPED, .5, .5, .5, false)
+
+    local sname = scan:GetName()
+    for i = 1, scan:NumLines() do
+      local l = _G[sname .. "TextLeft" .. i]
+      local r = _G[sname .. "TextRight" .. i]
+      local text = l and l:GetText()
+      local rtext = r and r:IsShown() and r:GetText()
+
+      if text then
+        local lr, lg, lb = l:GetTextColor()
+        if rtext and rtext ~= "" then
+          local rr, rg, rb = r:GetTextColor()
+          tip:AddDoubleLine(text, rtext, lr, lg, lb, rr, rg, rb)
+        else
+          AddWrapped(tip, text, limit, lr, lg, lb)
+        end
+      end
     end
   end
 

@@ -457,44 +457,35 @@ module.enable = function(self)
 
   ---------------------------------------------------------------- display
 
-  local function AddHeader(tooltip)
-    local name = tooltip:GetName()
+  -- rebuild the equipped item's tooltip into `tip`, wrapped to `limit` pixels,
+  -- with the "Currently equipped" label on top (no line shifting)
+  local function Fill(tip, slotName, limit)
+    local id = SlotID(slotName)
+    scan:SetOwner(WorldFrame, "ANCHOR_NONE")
+    scan:ClearLines()
+    scan:SetInventoryItem("player", id)
 
-    -- shift all entries one line down
-    for i=tooltip:NumLines(), 1, -1 do
-      for _, side in pairs(sides) do
-        local current = _G[name.."Text"..side..i]
-        local below = _G[name.."Text"..side..i+1]
+    tip:ClearLines()
+    tip:AddLine(CURRENTLY_EQUIPPED, .5, .5, .5, false)
 
-        if current and current:IsShown() then
-          local text = current:GetText()
-          local r, g, b = current:GetTextColor()
+    local sname = scan:GetName()
+    for i = 1, scan:NumLines() do
+      local l = _G[sname .. "TextLeft" .. i]
+      local r = _G[sname .. "TextRight" .. i]
+      local text = l and l:GetText()
+      local rtext = r and r:IsShown() and r:GetText()
 
-          if text and text ~= "" then
-            if tooltip:NumLines() < i+1 then
-              -- add new line if required
-              tooltip:AddLine(text, r, g, b, true)
-            else
-              -- update existing lines
-              below:SetText(text)
-              below:SetTextColor(r, g, b)
-              below:Show()
-
-              -- hide processed line
-              current:Hide()
-            end
-          end
+      if text then
+        local lr, lg, lb = l:GetTextColor()
+        if rtext and rtext ~= "" then
+          -- left/right pair (slot + armor type, damage + speed): never wrapped
+          local rr, rg, rb = r:GetTextColor()
+          tip:AddDoubleLine(text, rtext, lr, lg, lb, rr, rg, rb)
+        else
+          AddWrapped(tip, text, limit, lr, lg, lb)
         end
       end
     end
-
-    -- add label to first line
-    _G[name.."TextLeft1"]:SetTextColor(.5, .5, .5, 1)
-    _G[name.."TextLeft1"]:SetText(CURRENTLY_EQUIPPED)
-    _G[name.."TextLeft1"]:Show()
-
-    -- update tooltip sizes
-    tooltip:Show()
   end
 
   ShoppingTooltip1:SetClampedToScreen(true)
@@ -596,18 +587,16 @@ module.enable = function(self)
       tip:SetOwner(tooltip, "ANCHOR_NONE")
       tip:ClearAllPoints()
       tip:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-      tip:SetInventoryItem("player", SlotID(sh.slot))
-      tip:Show()
-      AddHeader(tip)
+
+      -- width limit = the hovered tooltip's width (minus 10px padding each side)
+      local limit = max(tooltip:GetWidth() * tooltip:GetEffectiveScale() / tip:GetEffectiveScale() - 20, 150)
+
+      Fill(tip, sh.slot, limit)
 
       -- the change list, only when something actually changes
       if sh.stats then
         local lines = Diff(new, sh.stats)
         if getn(lines) > 0 then
-          -- the width the client gave this tooltip from the equipped item's own text
-          -- (10px padding on each side)
-          local limit = max(tip:GetWidth() - 20, 100)
-
           tip:AddLine(" ")
           if sh.plural then
             AddWrapped(tip, T["If you replace these items, the following stat changes will occur:"], limit, 1, .82, 0)
@@ -615,9 +604,9 @@ module.enable = function(self)
             AddWrapped(tip, T["If you replace this item, the following stat changes will occur:"], limit, 1, .82, 0)
           end
           for m = 1, getn(lines) do AddWrapped(tip, lines[m], limit, 1, 1, 1) end
-          tip:Show()
         end
       end
+      tip:Show()
     end
 
     for i = count + 1, 2 do tips[i]:Hide() end

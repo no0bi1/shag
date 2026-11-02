@@ -103,8 +103,23 @@ module.enable = function(self)
   map(hands, INVTYPE_WEAPONMAINHAND, "MH")
   map(hands, INVTYPE_WEAPONOFFHAND, "OH")
   map(hands, INVTYPE_SHIELD, "SHIELD")
+  -- same text for both on some clients: resolve it per tooltip below
+  if INVTYPE_SHIELD and INVTYPE_SHIELD == INVTYPE_WEAPONOFFHAND then
+    hands[INVTYPE_SHIELD] = "OFF"
+  end
   map(hands, INVTYPE_HOLDABLE, "HOLD")
- 
+
+  -- weapons show "Speed 2.60" on the right side of the damage line, shields never do
+  local function HasSpeed(tooltip)
+    local name = tooltip:GetName()
+    for i = 2, tooltip:NumLines() do
+      local r = _G[name .. "TextRight" .. i]
+      local t = r and r:IsShown() and r:GetText()
+      if t and strfind(t, "%d+%.%d+$") then return true end
+    end
+    return false
+  end
+
   -- find out what kind of item a tooltip shows: returns kind, slot(s)
   local function Identify(tooltip)
     local name = tooltip:GetName()
@@ -114,7 +129,9 @@ module.enable = function(self)
       if text then
         if simple[text] then return "SIMPLE", simple[text] end
         if pairs_[text] then return "PAIR", pairs_[text] end
-        if hands[text] then return hands[text] end
+        local k = hands[text]
+        if k == "OFF" then k = HasSpeed(tooltip) and "OH" or "SHIELD" end
+        if k then return k end
       end
     end
   end
@@ -447,7 +464,7 @@ module.enable = function(self)
       elseif kind == "1H" or kind == "MH" or kind == "OH" then
         -- one-handers: show BOTH equipped weapons, each with its own change list
         local offOnly = (kind == "OH")
-        if mh and (not offOnly or IsWeapon(oh) or mh.kind == "2H") then
+        if mh and (not offOnly or IsWeapon(oh)) then
           add("MainHandSlot")
         end
         if oh and (IsWeapon(oh) or offOnly) then
@@ -455,9 +472,7 @@ module.enable = function(self)
         end
       elseif kind == "SHIELD" or kind == "HOLD" then
         -- offhand slot; a two-hander in the mainhand has to come off first
-        if mh and mh.kind == "2H" then
-          add("MainHandSlot")
-        elseif oh then
+        if oh and not (mh and mh.kind == "2H") then
           add("SecondaryHandSlot")
         end
       end

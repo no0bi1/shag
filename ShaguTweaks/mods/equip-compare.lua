@@ -179,6 +179,17 @@ module.enable = function(self)
     return nil
   end
  
+  -- "Equip:" lines that only happen under a condition (procs, triggers) aren't a stat change.
+  -- Structural test, no item names: a probability ("3% chance"), "Proc chance", or a leading trigger clause.
+  local function IsConditional(sentence)
+    local low = strlower(sentence)
+    if strfind(low, "%d+%%%s+chance") then return true end   -- "has a 3% chance of ..."
+    if strfind(low, "proc chance") then return true end      -- "(Proc chance: 3%)"
+    if strfind(low, "^when") or strfind(low, "^chance") or strfind(low, "^has a") then return true end
+    if strfind(low, "^if ") or strfind(low, "^on ") then return true end
+    return false
+  end
+
   local function Parse(tooltip)
     local name = tooltip:GetName()
     local s = NewStats()
@@ -195,7 +206,7 @@ module.enable = function(self)
         if strsub(text, 1, prefix) == EQUIP .. " " then
           local sentence = strsub(text, prefix + 1)
           local _, _, sign, num = strfind(sentence, "([%+%-]?)([%d%.]*%d)")
-          if num then
+          if num and not IsConditional(sentence) then
             -- only the first number becomes "#" (so "5 mana per 5 sec" keeps its 2nd number) and the sign
             -- goes with the value, so "+32 attack power" and "32 attack power" are the same stat
             local key = gsub(sentence, "[%+%-]?[%d%.]*%d", "#", 1)

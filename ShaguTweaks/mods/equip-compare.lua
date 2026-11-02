@@ -156,8 +156,17 @@ module.enable = function(self)
     ["ranged attack power"] = "Increases ranged attack power by #.",
   }
 
+  local Condense -- defined further down
+
   local function NewStats()
-    return { fx = {}, order = {}, gen = {}, pct = {} }
+    return { fx = {}, order = {}, gen = {}, pct = {}, procs = {}, porder = {} }
+  end
+
+  local function AddProc(s, sentence)
+    if not s.procs[sentence] then
+      s.procs[sentence] = true
+      tinsert(s.porder, sentence)
+    end
   end
 
   local function AddFx(s, label, val, generic, pct)
@@ -195,13 +204,14 @@ module.enable = function(self)
         if strsub(text, 1, prefix) == EQUIP .. " " then
           local sentence = strsub(text, prefix + 1)
           local _, _, sign, num = strfind(sentence, "([%+%-]?)([%d%.]*%d)")
-          if num then
-            -- only the first number becomes "#" (so "5 mana per 5 sec" keeps its 2nd number) and the sign
-            -- goes with the value, so "+32 attack power" and "32 attack power" are the same stat
-            local key = gsub(sentence, "[%+%-]?[%d%.]*%d", "#", 1)
+          local key = num and gsub(sentence, "[%+%-]?[%d%.]*%d", "#", 1)
+          if num and Condense(key) then
             local val = tonumber(num)
             if sign == "-" then val = -val end
             AddFx(s, key, val, true)
+          else
+            -- conditional / proc text ("Chance on hit...", "When struck...") or no number at all
+            AddProc(s, sentence)
           end
         else
           -- any "<number> <words>" or "<words> +<number>" line is a stat, whatever the words are:
@@ -270,6 +280,9 @@ module.enable = function(self)
         AddFx(s, label, t.fx[label], t.gen[label], t.pct[label])
       end
     end
+    for n = 1, 2 do
+      for i = 1, getn(src[n].porder) do AddProc(s, src[n].porder[i]) end
+    end
     return s
   end
 
@@ -293,7 +306,7 @@ module.enable = function(self)
     { " attacks with a shield$", "" },
   }
 
-  local function Condense(sentence)
+  Condense = function(sentence)
     local t = gsub(sentence, "%.$", "")
     local stripped
     for i = 1, getn(VERBS) do
@@ -324,6 +337,16 @@ module.enable = function(self)
     end
     subject = strupper(strsub(subject, 1, 1)) .. strsub(subject, 2)
     return subject, (pct == "%")
+  end
+
+  local PROCLEN = 32
+  local function ShortProc(sentence)
+    local t = gsub(sentence, "%s*%(.-%)%s*$", "") -- drop "(Proc chance: 3%)" etc.
+    if strlen(t) > PROCLEN then
+      t = strsub(t, 1, PROCLEN)
+      t = gsub(t, "%s+%S*$", "") .. "..."
+    end
+    return t
   end
 
   local function Num(d, dec)
@@ -368,6 +391,15 @@ module.enable = function(self)
           end
         end
       end
+    end
+
+    for i = 1, getn(new.porder) do
+      local p = new.porder[i]
+      if not old.procs[p] then tinsert(out, GREEN .. "+ " .. ShortProc(p) .. "|r") end
+    end
+    for i = 1, getn(old.porder) do
+      local p = old.porder[i]
+      if not new.procs[p] then tinsert(out, RED .. "- " .. ShortProc(p) .. "|r") end
     end
     return out
   end

@@ -1,6 +1,6 @@
 local _G = ShaguTweaks.GetGlobalEnv()
 local T = ShaguTweaks.T
-
+ 
 local module = ShaguTweaks:register({
   title = T["Item Compare"],
   description = T["Shows the equipped items and the stat changes on tooltips while the shift key is pressed (always on the auction house)."],
@@ -8,13 +8,13 @@ local module = ShaguTweaks:register({
   category = T["Tooltip & Items"],
   enabled = true,
 })
-
+ 
 module.enable = function(self)
   local GREEN, RED = "|cff20ff20", "|cffff4040"
   local EQUIP = ITEM_SPELL_TRIGGER_ONEQUIP or "Equip:"
-
+ 
   ---------------------------------------------------------------- item types
-
+ 
   local itemtypes = {
     ["deDE"] = {
       ["INVTYPE_WAND"] = "Zauberstab",
@@ -66,17 +66,17 @@ module.enable = function(self)
       ["INVTYPE_PROJECTILE"] = "弹药",
     }
   }
-
+ 
   -- set globals for all inventory types
   for key, value in pairs(itemtypes[GetLocale()] or itemtypes["enUS"]) do setglobal(key, value) end
-
+ 
   -- tooltip text -> what to compare against
   local simple = {}   -- one slot
   local pairs_ = {}   -- two slots (rings, trinkets)
   local hands = {}    -- weapons, shields, held items
-
+ 
   local function map(tbl, key, value) if key then tbl[key] = value end end
-
+ 
   map(simple, INVTYPE_HEAD, "HeadSlot")
   map(simple, INVTYPE_NECK, "NeckSlot")
   map(simple, INVTYPE_SHOULDER, "ShoulderSlot")
@@ -94,17 +94,17 @@ module.enable = function(self)
   map(simple, INVTYPE_GUN, "RangedSlot")
   map(simple, INVTYPE_CROSSBOW, "RangedSlot")
   map(simple, INVTYPE_THROWN, "RangedSlot")
-
+ 
   map(pairs_, INVTYPE_FINGER, { "Finger0Slot", "Finger1Slot" })
   map(pairs_, INVTYPE_TRINKET, { "Trinket0Slot", "Trinket1Slot" })
-
+ 
   map(hands, INVTYPE_2HWEAPON, "2H")
   map(hands, INVTYPE_WEAPON, "1H")
   map(hands, INVTYPE_WEAPONMAINHAND, "MH")
   map(hands, INVTYPE_WEAPONOFFHAND, "OH")
   map(hands, INVTYPE_SHIELD, "SHIELD")
   map(hands, INVTYPE_HOLDABLE, "HOLD")
-
+ 
   -- find out what kind of item a tooltip shows: returns kind, slot(s)
   local function Identify(tooltip)
     local name = tooltip:GetName()
@@ -118,12 +118,12 @@ module.enable = function(self)
       end
     end
   end
-
+ 
   ---------------------------------------------------------------- tooltip reader
   -- Reads a tooltip and keeps EVERYTHING it finds, nothing is hard-coded per stat:
   --   "Equip: <sentence with a number>"     -> keyed by the sentence, the number is the value
   --   "+5 Stamina" / "9 Block" / "22 Armor" -> keyed by the label, the number is the value
-
+ 
   local BASE = {
     { key = "armor", label = "Armor" },
     { key = "str",   label = "Strength" },
@@ -141,13 +141,13 @@ module.enable = function(self)
     { key = "res6",  label = "Arcane Resistance" },
     { key = "dps",   label = "Damage Per Second", dec = true },
   }
-
+ 
   local PRIMARY = { Strength = "str", Agility = "agi", Stamina = "sta", Intellect = "int",
                     Spirit = "spi", Health = "hp", Mana = "mana" }
   local RES = { Holy = "res1", Fire = "res2", Nature = "res3", Frost = "res4",
                 Shadow = "res5", Arcane = "res6" }
   local SCHOOLS = { arcane = true, fire = true, frost = true, holy = true, nature = true, shadow = true }
-
+ 
   -- a random-suffix line ("+20 Healing Spells") lines up with the "Equip:" sentence of the same effect
   local ALIAS = {
     ["healing spells"] = "Increases healing done by spells and effects by up to #.",
@@ -155,20 +155,11 @@ module.enable = function(self)
     ["attack power"] = "Increases attack power by #.",
     ["ranged attack power"] = "Increases ranged attack power by #.",
   }
-
-  local Condense -- defined further down
-
+ 
   local function NewStats()
-    return { fx = {}, order = {}, gen = {}, pct = {}, procs = {}, porder = {} }
+    return { fx = {}, order = {}, gen = {}, pct = {} }
   end
-
-  local function AddProc(s, sentence)
-    if not s.procs[sentence] then
-      s.procs[sentence] = true
-      tinsert(s.porder, sentence)
-    end
-  end
-
+ 
   local function AddFx(s, label, val, generic, pct)
     if s.fx[label] then
       s.fx[label] = s.fx[label] + val
@@ -179,7 +170,7 @@ module.enable = function(self)
     if generic then s.gen[label] = true end
     if pct then s.pct[label] = true end
   end
-
+ 
   local function BaseKey(label)
     if PRIMARY[label] then return PRIMARY[label] end
     if label == "Armor" then return "armor" end
@@ -187,31 +178,30 @@ module.enable = function(self)
     if school then return RES[school] end
     return nil
   end
-
+ 
   local function Parse(tooltip)
     local name = tooltip:GetName()
     local s = NewStats()
     local dmin, dmax, speed
     local prefix = strlen(EQUIP) + 1
-
+ 
     for i = 2, tooltip:NumLines() do -- line 1 is the item name
       local l = _G[name .. "TextLeft" .. i]
       local r = _G[name .. "TextRight" .. i]
       local text = l and l:GetText()
       local rtext = r and r:IsShown() and r:GetText()
-
+ 
       if text then
         if strsub(text, 1, prefix) == EQUIP .. " " then
           local sentence = strsub(text, prefix + 1)
           local _, _, sign, num = strfind(sentence, "([%+%-]?)([%d%.]*%d)")
-          local key = num and gsub(sentence, "[%+%-]?[%d%.]*%d", "#", 1)
-          if num and Condense(key) then
+          if num then
+            -- only the first number becomes "#" (so "5 mana per 5 sec" keeps its 2nd number) and the sign
+            -- goes with the value, so "+32 attack power" and "32 attack power" are the same stat
+            local key = gsub(sentence, "[%+%-]?[%d%.]*%d", "#", 1)
             local val = tonumber(num)
             if sign == "-" then val = -val end
             AddFx(s, key, val, true)
-          else
-            -- conditional / proc text ("Chance on hit...", "When struck...") or no number at all
-            AddProc(s, sentence)
           end
         else
           -- any "<number> <words>" or "<words> +<number>" line is a stat, whatever the words are:
@@ -224,7 +214,7 @@ module.enable = function(self)
             local _, _, lb2, sg2, nm2, pc2 = strfind(text, "^(%a[^%d]-):? ([%+%-])([%d%.]*%d)(%%?)$")
             if nm2 then sign, num, pct, label = sg2, nm2, pc2, lb2 end
           end
-
+ 
           if num then
             local val = tonumber(num)
             if sign == "-" then val = -val end
@@ -249,7 +239,7 @@ module.enable = function(self)
               end
             end
           end
-
+ 
           local _, _, a, b = strfind(text, "^(%d+) %- (%d+) %a* ?Damage$")
           if a then dmin, dmax = tonumber(a), tonumber(b) end
           if rtext then
@@ -259,13 +249,13 @@ module.enable = function(self)
         end
       end
     end
-
+ 
     if dmin and speed and speed > 0 then
       s.dps = (dmin + dmax) / 2 / speed
     end
     return s
   end
-
+ 
   local function Combine(a, b)
     local s = NewStats()
     for i = 1, getn(BASE) do
@@ -280,20 +270,17 @@ module.enable = function(self)
         AddFx(s, label, t.fx[label], t.gen[label], t.pct[label])
       end
     end
-    for n = 1, 2 do
-      for i = 1, getn(src[n].porder) do AddProc(s, src[n].porder[i]) end
-    end
     return s
   end
-
+ 
   ---------------------------------------------------------------- differences
-
+ 
   -- Shortens an "Equip:" sentence (number replaced by "#") into "<number> <short label>":
   --   "Increases attack power by #."       -> "+5 Attack power"
   --   "Improves your chance to hit by #%." -> "+1% Hit"
   -- Anything that doesn't fit these shapes returns nil and the full sentence is shown.
   local VERBS = { "Increases your ", "Increases ", "Improves your ", "Improves ", "Restores ", "Increased ", "Adds ", "Grants ", "Gives " }
-
+ 
   -- plain-English filler to drop from the label (edit/add to taste)
   local FILLER = {
     { "^damage done by (%a+) spells and effects$", "%1 damage" },
@@ -305,8 +292,8 @@ module.enable = function(self)
     { " an attack$", "" },
     { " attacks with a shield$", "" },
   }
-
-  Condense = function(sentence)
+ 
+  local function Condense(sentence)
     local t = gsub(sentence, "%.$", "")
     local stripped
     for i = 1, getn(VERBS) do
@@ -319,7 +306,7 @@ module.enable = function(self)
     end
     if not stripped and strsub(t, 1, 1) == "#" then stripped = true end
     if not stripped then return nil end
-
+ 
     local subject, pct
     local _, _, a, b = strfind(t, "^(.-) by up to #(%%?)$")
     if not a then _, _, a, b = strfind(t, "^(.-) by #(%%?)$") end
@@ -331,29 +318,19 @@ module.enable = function(self)
       if rest then subject, pct = rest, p2 end
     end
     if not subject or subject == "" then return nil end
-
+ 
     for i = 1, getn(FILLER) do
       subject = gsub(subject, FILLER[i][1], FILLER[i][2])
     end
     subject = strupper(strsub(subject, 1, 1)) .. strsub(subject, 2)
     return subject, (pct == "%")
   end
-
-  local PROCLEN = 32
-  local function ShortProc(sentence)
-    local t = gsub(sentence, "%s*%(.-%)%s*$", "") -- drop "(Proc chance: 3%)" etc.
-    if strlen(t) > PROCLEN then
-      t = strsub(t, 1, PROCLEN)
-      t = gsub(t, "%s+%S*$", "") .. "..."
-    end
-    return t
-  end
-
+ 
   local function Num(d, dec)
     if dec then return format("%+.1f", d) end
     return format("%+d", d)
   end
-
+ 
   local function Diff(new, old)
     local out = {}
     for i = 1, getn(BASE) do
@@ -364,7 +341,7 @@ module.enable = function(self)
         tinsert(out, col .. Num(d, b.dec) .. " " .. b.label .. "|r")
       end
     end
-
+ 
     local seen = {}
     local lists = { new, old }
     for n = 1, 2 do
@@ -392,34 +369,25 @@ module.enable = function(self)
         end
       end
     end
-
-    for i = 1, getn(new.porder) do
-      local p = new.porder[i]
-      if not old.procs[p] then tinsert(out, GREEN .. "+ " .. ShortProc(p) .. "|r") end
-    end
-    for i = 1, getn(old.porder) do
-      local p = old.porder[i]
-      if not new.procs[p] then tinsert(out, RED .. "- " .. ShortProc(p) .. "|r") end
-    end
     return out
   end
-
+ 
   ---------------------------------------------------------------- equipped items
-
+ 
   local scan = CreateFrame("GameTooltip", "ItemCompareScanTip", nil, "GameTooltipTemplate")
   local cache = {}
-
+ 
   local function SlotID(slotName)
     local id = GetInventorySlotInfo(slotName)
     return id
   end
-
+ 
   -- what you are wearing in a slot: { kind, stats }, read from its own tooltip and cached per item link
   local function Equipped(slotName)
     local id = SlotID(slotName)
     local link = GetInventoryItemLink("player", id)
     if not link then return nil end
-
+ 
     local e = cache[link]
     if not e then
       scan:SetOwner(WorldFrame, "ANCHOR_NONE")
@@ -430,11 +398,11 @@ module.enable = function(self)
     end
     return e
   end
-
+ 
   local function IsWeapon(e)
     return e and (e.kind == "1H" or e.kind == "MH" or e.kind == "OH")
   end
-
+ 
   -- which equipped items does the hovered item replace?
   local function Targets(kind, slot)
     local shown = {}
@@ -443,7 +411,7 @@ module.enable = function(self)
       if e then tinsert(shown, { slot = slotName, stats = e.stats }) end
       return e
     end
-
+ 
     if kind == "SIMPLE" then
       add(slot)
     elseif kind == "PAIR" then
@@ -485,17 +453,17 @@ module.enable = function(self)
     end
     return shown
   end
-
+ 
   ---------------------------------------------------------------- display
-
+ 
   -- invisible fontstring used only to measure text width
   local probe = UIParent:CreateFontString(nil, "ARTWORK", "GameTooltipText")
   probe:SetAlpha(0)
   local MAXW = 250 -- lines wider than this wrap to the tooltip's natural width
-
+ 
   local function AddHeader(tooltip)
     local name = tooltip:GetName()
-
+ 
     -- Snapshot the original lines before rebuilding the tooltip.
     -- Wrapping belongs to each destination FontString, so shifted lines
     -- must be added again with the appropriate wrap flag.
@@ -518,11 +486,11 @@ module.enable = function(self)
         tinsert(snap, e)
       end
     end
-
+ 
     -- Rebuild with the header first, then restore the original content.
     tooltip:ClearLines()
     tooltip:AddLine(CURRENTLY_EQUIPPED, .5, .5, .5)
-
+ 
     for i = 1, getn(snap) do
       local e = snap[i]
       if e.rt then
@@ -535,14 +503,14 @@ module.enable = function(self)
         tooltip:AddLine(e.lt, e.lr, e.lg, e.lb, wrap)
       end
     end
-
+ 
     tooltip:Show()
   end
-
+ 
   ShoppingTooltip1:SetClampedToScreen(true)
   ShoppingTooltip2:SetClampedToScreen(true)
   local tips = { ShoppingTooltip1, ShoppingTooltip2 }
-
+ 
   -- put the compare tooltips on a side of the hovered tooltip where they all fit side by side
   local function Place(tooltip, count)
     local ui = UIParent:GetEffectiveScale()
@@ -550,14 +518,14 @@ module.enable = function(self)
     local sc = tooltip:GetEffectiveScale()
     local tipL = (tooltip:GetLeft() or 0) * sc
     local tipR = (tooltip:GetRight() or 0) * sc
-
+ 
     local total, first = 0, 0
     for i = 1, count do
       local w = tips[i]:GetWidth() * tips[i]:GetEffectiveScale()
       total = total + w
       if i == 1 then first = w end
     end
-
+ 
     local mode
     if tipR + total <= screenR then
       mode = "right"
@@ -568,7 +536,7 @@ module.enable = function(self)
     else
       mode = "stackleft"
     end
-
+ 
     local prev = tooltip
     for i = 1, count do
       local tip = tips[i]
@@ -594,11 +562,11 @@ module.enable = function(self)
       prev = tip
     end
   end
-
+ 
   local function Render(tooltip, shown, new)
     local count = getn(shown)
     if count > 2 then count = 2 end
-
+ 
     for i = 1, count do
       local tip, sh = tips[i], shown[i]
       tip:SetOwner(tooltip, "ANCHOR_NONE")
@@ -607,7 +575,7 @@ module.enable = function(self)
       tip:SetInventoryItem("player", SlotID(sh.slot))
       tip:Show()
       AddHeader(tip)
-
+ 
       -- the change list, only when something actually changes
       if sh.stats then
         local lines = Diff(new, sh.stats)
@@ -623,14 +591,14 @@ module.enable = function(self)
         end
       end
     end
-
+ 
     for i = count + 1, 2 do tips[i]:Hide() end
     Place(tooltip, count)
     return count
   end
-
+ 
   ---------------------------------------------------------------- when to compare
-
+ 
   -- the auction house always compares (like the game's own tooltip), everything else needs shift
   local function InAuction()
     if not (AuctionFrame and AuctionFrame:IsVisible()) then return false end
@@ -643,36 +611,36 @@ module.enable = function(self)
     end
     return false
   end
-
+ 
   -- hovering your own paperdoll: nothing to compare
   local function OnPaperdoll()
     local f = GetMouseFocus()
     local n = f and f:GetName()
     return n and strfind(n, "^Character.+Slot$") and true or false
   end
-
+ 
   local state = { sig = nil, count = 0, lines = 0, lines2 = 0 }
-
+ 
   local function HideCompare()
     ShoppingTooltip1:Hide()
     ShoppingTooltip2:Hide()
     state.sig, state.count, state.lines, state.lines2 = nil, 0, 0, 0
   end
-
+ 
   local function ShowCompare(tooltip)
     local auction = InAuction()
     if not (IsShiftKeyDown() or auction) or OnPaperdoll() then
       if state.sig then HideCompare() end
       return
     end
-
+ 
     -- cheap signature so the tooltip is only re-read when it actually changed
     local name = tooltip:GetName()
     local n = tooltip:NumLines()
     local l1, l2, ln = _G[name .. "TextLeft1"], _G[name .. "TextLeft2"], _G[name .. "TextLeft" .. n]
     local sig = name .. (auction and "A" or "S") .. n .. (l1 and l1:GetText() or "")
       .. "|" .. (l2 and l2:GetText() or "") .. "|" .. (ln and ln:GetText() or "")
-
+ 
     if state.sig == sig then
       if state.count == 0 then return end
       -- something else (e.g. the game's own compare) overwrote our tooltip: draw it again
@@ -681,7 +649,7 @@ module.enable = function(self)
         return
       end
     end
-
+ 
     local kind, slot = Identify(tooltip)
     local shown = kind and Targets(kind, slot)
     if not shown or getn(shown) == 0 then
@@ -689,17 +657,17 @@ module.enable = function(self)
       state.sig = sig
       return
     end
-
+ 
     local count = Render(tooltip, shown, Parse(tooltip))
     state.sig, state.count, state.lines = sig, count, ShoppingTooltip1:NumLines()
     state.lines2 = (count == 2) and ShoppingTooltip2:NumLines() or 0
   end
-
+ 
   -- the game's own compare would fight with ours
   if GameTooltip_ShowCompareItem then
     GameTooltip_ShowCompareItem = function() end
   end
-
+ 
   -- show item compare on default tooltips
   local default = CreateFrame("Frame", nil, GameTooltip)
   default:SetScript("OnUpdate", function()
@@ -708,7 +676,7 @@ module.enable = function(self)
   default:SetScript("OnHide", function()
     if not ItemRefTooltip:IsShown() then HideCompare() end
   end)
-
+ 
   -- show compare on clicked chat links (only while no other tooltip is up)
   local ref = CreateFrame("Frame", nil, ItemRefTooltip)
   ref:SetScript("OnUpdate", function()
@@ -718,7 +686,7 @@ module.enable = function(self)
   ref:SetScript("OnHide", function()
     if not GameTooltip:IsShown() then HideCompare() end
   end)
-
+ 
   -- show compare on atlas tooltips
   ShaguTweaks.HookAddonOrVariable("AtlasLoot", function()
     local atlas = CreateFrame("Frame", nil, AtlasLootTooltip)

@@ -151,8 +151,6 @@ module.enable = function(self)
   -- Merchant and auction comparisons
   --------------------------------------------------
 
-  local prevMerchant = ShoppingTooltip1.SetMerchantCompareItem
-
   local function SetMerchantCompareItem(self, index, compareItem)
     if compareItem == 1 then
       ShowCompareItem(
@@ -160,14 +158,11 @@ module.enable = function(self)
         GetMerchantItemLink(index),
         true
       )
-      return false
     end
 
-    return prevMerchant
-      and prevMerchant(self, index, compareItem)
+    -- ShowCompareItem draws both slots; suppress the native duplicate.
+    return false
   end
-
-  local prevAuction = ShoppingTooltip1.SetAuctionCompareItem
 
   local function SetAuctionCompareItem(
     self, auctionType, index, compareItem
@@ -178,11 +173,9 @@ module.enable = function(self)
         GetAuctionItemLink(auctionType, index),
         true
       )
-      return false
     end
 
-    return prevAuction
-      and prevAuction(self, auctionType, index, compareItem)
+    return false
   end
 
   ShoppingTooltip1.SetMerchantCompareItem = SetMerchantCompareItem

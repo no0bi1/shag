@@ -211,15 +211,17 @@ libunitscan:SetScript("OnEvent", function()
       level = UnitLevel(scan)
       name = UnitName(scan)
       AddData("mobs", name, class, level, elite)
-      -- A chat sender already identified as an NPC must never trigger WHO.
-      queue[name] = nil
-      -- If its lookup was already sent, keep WHO routed silently until the
-      -- response arrives, but discard that response instead of caching it.
-      if whoRequestedName and name and string.lower(whoRequestedName) == string.lower(name) then
-        whoRequestedIsNpc = true
-      end
-      if ShaguTweaks.ResolveSocialColorMessages then
-        ShaguTweaks.ResolveSocialColorMessages(name, nil)
+      if name then
+        -- A chat sender already identified as an NPC must never trigger WHO.
+        queue[name] = nil
+        -- If its lookup was already sent, keep WHO routed silently until the
+        -- response arrives, but discard that response instead of caching it.
+        if whoRequestedName and string.lower(whoRequestedName) == string.lower(name) then
+          whoRequestedIsNpc = true
+        end
+        if ShaguTweaks.ResolveSocialColorMessages then
+          ShaguTweaks.ResolveSocialColorMessages(name, nil)
+        end
       end
     end
   end

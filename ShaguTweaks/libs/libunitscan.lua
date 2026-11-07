@@ -6,6 +6,7 @@ local units = { players = {}, mobs = {} }
 local queue = { }
 local whoRequestedName = nil
 local whoRequestedAt = 0
+local whoRequestedIsNpc = false
 local WHO_REQUEST_TIMEOUT = 8
 local whoUIHookInstalled = false
 
@@ -73,7 +74,7 @@ local function FinishWho(found, timedOut)
   if not whoRequestedName then return end
 
   local requestedName = whoRequestedName
-  if not found then
+  if not found and not whoRequestedIsNpc then
     if timedOut then
       DEFAULT_CHAT_FRAME:AddMessage("|cffff6666[UnitScan]|r WHO timed out for " .. tostring(requestedName) .. ".")
     else
@@ -88,6 +89,7 @@ local function FinishWho(found, timedOut)
   SetWhoToUI(0)
   whoRequestedName = nil
   whoRequestedAt = 0
+  whoRequestedIsNpc = false
   if next(queue) then libunitscan:Show() end
 end
 
@@ -105,6 +107,7 @@ local function RequestWho(name)
 
   whoRequestedName = name
   whoRequestedAt = GetTime()
+  whoRequestedIsNpc = false
   -- Route results to WHO_LIST_UPDATE rather than normal WHO chat output.
   SetWhoToUI(1)
   SendWho('n-"' .. name .. '"')
@@ -175,12 +178,14 @@ libunitscan:SetScript("OnEvent", function()
     -- Only WHO_LIST_UPDATE contains the current structured result set.
     -- CHAT_MSG_SYSTEM can arrive with stale GetWhoInfo data from a prior query;
     -- using it here can finish the request before the client's chat lines arrive.
-    for i = 1, GetNumWhoResults() do
-      name, _, level, _, class, _ = GetWhoInfo(i)
-      class = L["class"][class] or nil
-      AddData("players", name, class, level)
-      if whoRequestedName and name and string.lower(name) == string.lower(whoRequestedName) and class then
-        matchedRequestedName = true
+    if not whoRequestedIsNpc then
+      for i = 1, GetNumWhoResults() do
+        name, _, level, _, class, _ = GetWhoInfo(i)
+        class = L["class"][class] or nil
+        AddData("players", name, class, level)
+        if whoRequestedName and name and string.lower(name) == string.lower(whoRequestedName) and class then
+          matchedRequestedName = true
+        end
       end
     end
 
@@ -206,6 +211,18 @@ libunitscan:SetScript("OnEvent", function()
       level = UnitLevel(scan)
       name = UnitName(scan)
       AddData("mobs", name, class, level, elite)
+      if name then
+        -- A chat sender already identified as an NPC must never trigger WHO.
+        queue[name] = nil
+        -- If its lookup was already sent, keep WHO routed silently until the
+        -- response arrives, but discard that response instead of caching it.
+        if whoRequestedName and string.lower(whoRequestedName) == string.lower(name) then
+          whoRequestedIsNpc = true
+        end
+        if ShaguTweaks.ResolveSocialColorMessages then
+          ShaguTweaks.ResolveSocialColorMessages(name, nil)
+        end
+      end
     end
   end
 end)

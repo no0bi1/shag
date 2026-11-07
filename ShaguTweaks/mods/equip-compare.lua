@@ -1,724 +1,260 @@
 local _G = ShaguTweaks.GetGlobalEnv()
 local T = ShaguTweaks.T
- 
+
+-- Port of pfUI's eqcompare.lua. Needs the ClassicAPI DLL (hooksecurefunc,
+-- C_Item.IsEquippedItem, GameTooltip:SetHyperlinkCompareItem, HookScript, ...).
+-- Disable the "Item Compare" module while this one is enabled, or every item
+-- gets compared twice.
+
 local module = ShaguTweaks:register({
-  title = T["Item Compare"],
-  description = T["Shows the equipped items and the stat changes on tooltips while the shift key is pressed (always on the auction house)."],
+  title = T["Equipment Compare"],
+  description = T["Shows the equipped items on tooltips while the shift key is pressed, using the client's own compare data (requires ClassicAPI)."],
   expansions = { ["vanilla"] = true, ["tbc"] = nil },
   category = T["Tooltip & Items"],
   enabled = true,
 })
- 
+
 module.enable = function(self)
-  local GREEN, RED = "|cff20ff20", "|cffff4040"
-  local EQUIP = ITEM_SPELL_TRIGGER_ONEQUIP or "Equip:"
- 
-  ---------------------------------------------------------------- item types
- 
-  local itemtypes = {
-    ["deDE"] = {
-      ["INVTYPE_WAND"] = "Zauberstab",
-      ["INVTYPE_THROWN"] = "Wurfwaffe",
-      ["INVTYPE_GUN"] = "Schusswaffe",
-      ["INVTYPE_CROSSBOW"] = "Armbrust",
-      ["INVTYPE_PROJECTILE"] = "Projektil",
-    },
-    ["enUS"] = {
-      ["INVTYPE_WAND"] = "Wand",
-      ["INVTYPE_THROWN"] = "Thrown",
-      ["INVTYPE_GUN"] = "Gun",
-      ["INVTYPE_CROSSBOW"] = "Crossbow",
-      ["INVTYPE_PROJECTILE"] = "Projectile",
-    },
-    ["esES"] = {
-      ["INVTYPE_WAND"] = "Varita",
-      ["INVTYPE_THROWN"] = "Arma arrojadiza",
-      ["INVTYPE_GUN"] = "Arma de fuego",
-      ["INVTYPE_CROSSBOW"] = "Ballesta",
-      ["INVTYPE_PROJECTILE"] = "Proyectil",
-    },
-    ["frFR"] = {
-      ["INVTYPE_WAND"] = "Baguette",
-      ["INVTYPE_THROWN"] = "Armes de jet",
-      ["INVTYPE_GUN"] = "Arme à feu",
-      ["INVTYPE_CROSSBOW"] = "Arbalète",
-      ["INVTYPE_PROJECTILE"] = "Projectile",
-    },
-    ["koKR"] = {
-      ["INVTYPE_WAND"] = "마법봉",
-      ["INVTYPE_THROWN"] = "투척 무기",
-      ["INVTYPE_GUN"] = "총",
-      ["INVTYPE_CROSSBOW"] = "석궁",
-      ["INVTYPE_PROJECTILE"] = "투사체",
-    },
-    ["ruRU"] = {
-      ["INVTYPE_WAND"] = "Жезл",
-      ["INVTYPE_THROWN"] = "Метательное",
-      ["INVTYPE_GUN"] = "Огнестрельное",
-      ["INVTYPE_CROSSBOW"] = "Арбалет",
-      ["INVTYPE_PROJECTILE"] = "Боеприпасы",
-    },
-    ["zhCN"] = {
-      ["INVTYPE_WAND"] = "魔杖",
-      ["INVTYPE_THROWN"] = "投掷武器",
-      ["INVTYPE_GUN"] = "枪械",
-      ["INVTYPE_CROSSBOW"] = "弩",
-      ["INVTYPE_PROJECTILE"] = "弹药",
-    }
-  }
- 
-  -- set globals for all inventory types
-  for key, value in pairs(itemtypes[GetLocale()] or itemtypes["enUS"]) do setglobal(key, value) end
- 
-  -- tooltip text -> what to compare against
-  local simple = {}   -- one slot
-  local pairs_ = {}   -- two slots (rings, trinkets)
-  local hands = {}    -- weapons, shields, held items
- 
-  local function map(tbl, key, value) if key then tbl[key] = value end end
- 
-  map(simple, INVTYPE_HEAD, "HeadSlot")
-  map(simple, INVTYPE_NECK, "NeckSlot")
-  map(simple, INVTYPE_SHOULDER, "ShoulderSlot")
-  map(simple, INVTYPE_CHEST, "ChestSlot")
-  map(simple, INVTYPE_ROBE, "ChestSlot")
-  map(simple, INVTYPE_WAIST, "WaistSlot")
-  map(simple, INVTYPE_LEGS, "LegsSlot")
-  map(simple, INVTYPE_FEET, "FeetSlot")
-  map(simple, INVTYPE_WRIST, "WristSlot")
-  map(simple, INVTYPE_HAND, "HandsSlot")
-  map(simple, INVTYPE_CLOAK, "BackSlot")
-  map(simple, INVTYPE_RANGED, "RangedSlot")
-  map(simple, INVTYPE_RELIC, "RangedSlot")
-  map(simple, INVTYPE_WAND, "RangedSlot")
-  map(simple, INVTYPE_GUN, "RangedSlot")
-  map(simple, INVTYPE_CROSSBOW, "RangedSlot")
-  map(simple, INVTYPE_THROWN, "RangedSlot")
- 
-  map(pairs_, INVTYPE_FINGER, { "Finger0Slot", "Finger1Slot" })
-  map(pairs_, INVTYPE_TRINKET, { "Trinket0Slot", "Trinket1Slot" })
- 
-  map(hands, INVTYPE_2HWEAPON, "2H")
-  map(hands, INVTYPE_WEAPON, "1H")
-  map(hands, INVTYPE_WEAPONMAINHAND, "MH")
-  map(hands, INVTYPE_WEAPONOFFHAND, "OH")
-  map(hands, INVTYPE_SHIELD, "SHIELD")
-  -- same text for both on some clients: resolve it per tooltip below
-  if INVTYPE_SHIELD and INVTYPE_SHIELD == INVTYPE_WEAPONOFFHAND then
-    hands[INVTYPE_SHIELD] = "OFF"
-  end
-  map(hands, INVTYPE_HOLDABLE, "HOLD")
+  -- pfUI's "tooltip.compare.showalways" option: true compares without shift
+  -- for every item that is not already equipped
+  local SHOW_ALWAYS = false
 
-  -- weapons show "Speed 2.60" on the right side of the damage line, shields never do
-  local function HasSpeed(tooltip)
-    local name = tooltip:GetName()
-    for i = 2, tooltip:NumLines() do
-      local r = _G[name .. "TextRight" .. i]
-      local t = r and r:IsShown() and r:GetText()
-      if t and strfind(t, "%d+%.%d+$") then return true end
+  -- everything below depends on ClassicAPI: bail out quietly if it is not loaded
+  if not hooksecurefunc then return end
+  if not (ShoppingTooltip1 and ShoppingTooltip1.SetHyperlinkCompareItem) then return end
+
+  local function IsEquipped(link)
+    if C_Item and C_Item.IsEquippedItem then
+      return C_Item.IsEquippedItem(link)
     end
     return false
   end
 
-  -- find out what kind of item a tooltip shows: returns kind, slot(s)
-  local function Identify(tooltip)
-    local name = tooltip:GetName()
-    for i = 2, tooltip:NumLines() do
-      local line = _G[name .. "TextLeft" .. i]
-      local text = line and line:GetText()
-      if text then
-        if simple[text] then return "SIMPLE", simple[text] end
-        if pairs_[text] then return "PAIR", pairs_[text] end
-        local k = hands[text]
-        if k == "OFF" then k = HasSpeed(tooltip) and "OH" or "SHIELD" end
-        if k then return k end
-      end
-    end
-  end
- 
-  ---------------------------------------------------------------- tooltip reader
-  -- Reads a tooltip and keeps EVERYTHING it finds, nothing is hard-coded per stat:
-  --   "Equip: <sentence with a number>"     -> keyed by the sentence, the number is the value
-  --   "+5 Stamina" / "9 Block" / "22 Armor" -> keyed by the label, the number is the value
- 
-  local BASE = {
-    { key = "armor", label = "Armor" },
-    { key = "str",   label = "Strength" },
-    { key = "agi",   label = "Agility" },
-    { key = "sta",   label = "Stamina" },
-    { key = "int",   label = "Intellect" },
-    { key = "spi",   label = "Spirit" },
-    { key = "hp",    label = "Health" },
-    { key = "mana",  label = "Mana" },
-    { key = "res1",  label = "Holy Resistance" },
-    { key = "res2",  label = "Fire Resistance" },
-    { key = "res3",  label = "Nature Resistance" },
-    { key = "res4",  label = "Frost Resistance" },
-    { key = "res5",  label = "Shadow Resistance" },
-    { key = "res6",  label = "Arcane Resistance" },
-    { key = "dps",   label = "Damage Per Second", dec = true },
-  }
- 
-  local PRIMARY = { Strength = "str", Agility = "agi", Stamina = "sta", Intellect = "int",
-                    Spirit = "spi", Health = "hp", Mana = "mana" }
-  local RES = { Holy = "res1", Fire = "res2", Nature = "res3", Frost = "res4",
-                Shadow = "res5", Arcane = "res6" }
-  local SCHOOLS = { arcane = true, fire = true, frost = true, holy = true, nature = true, shadow = true }
- 
-  -- a random-suffix line ("+20 Healing Spells") lines up with the "Equip:" sentence of the same effect
-  local ALIAS = {
-    ["healing spells"] = "Increases healing done by spells and effects by up to #.",
-    ["spell damage"] = "Increases damage and healing done by magical spells and effects by up to #.",
-    ["attack power"] = "Increases attack power by #.",
-    ["ranged attack power"] = "Increases ranged attack power by #.",
-  }
- 
-  local function NewStats()
-    return { fx = {}, order = {}, gen = {}, pct = {} }
-  end
- 
-  local function AddFx(s, label, val, generic, pct)
-    if s.fx[label] then
-      s.fx[label] = s.fx[label] + val
+  -- frame:HookScript comes from ClassicAPI; fall back to wrapping the script
+  local function HookScript(frame, name, fn)
+    if frame.HookScript then
+      frame:HookScript(name, fn)
     else
-      s.fx[label] = val
-      tinsert(s.order, label)
+      local old = frame:GetScript(name)
+      frame:SetScript(name, function()
+        if old then old() end
+        fn(this)
+      end)
     end
-    if generic then s.gen[label] = true end
-    if pct then s.pct[label] = true end
-  end
- 
-  local function BaseKey(label)
-    if PRIMARY[label] then return PRIMARY[label] end
-    if label == "Armor" then return "armor" end
-    local _, _, school = strfind(label, "^(%a+) Resistance$")
-    if school then return RES[school] end
-    return nil
-  end
- 
-  -- "Equip:" lines that only happen under a condition (procs, triggers) aren't a stat change.
-  -- Structural test, no item names: a probability ("3% chance"), "Proc chance", or a leading trigger clause.
-  local function IsConditional(sentence)
-    local low = strlower(sentence)
-    if strfind(low, "%d+%%%s+chance") then return true end   -- "has a 3% chance of ..."
-    if strfind(low, "proc chance") then return true end      -- "(Proc chance: 3%)"
-    if strfind(low, "^when") or strfind(low, "^chance") or strfind(low, "^has a") then return true end
-    if strfind(low, "^if ") or strfind(low, "^on ") then return true end
-    return false
   end
 
-  local function Parse(tooltip)
-    local name = tooltip:GetName()
-    local s = NewStats()
-    local dmin, dmax, speed
-    local prefix = strlen(EQUIP) + 1
- 
-    for i = 2, tooltip:NumLines() do -- line 1 is the item name
-      local l = _G[name .. "TextLeft" .. i]
-      local r = _G[name .. "TextRight" .. i]
-      local text = l and l:GetText()
-      local rtext = r and r:IsShown() and r:GetText()
- 
-      if text then
-        if strsub(text, 1, prefix) == EQUIP .. " " then
-          local sentence = strsub(text, prefix + 1)
-          local _, _, sign, num = strfind(sentence, "([%+%-]?)([%d%.]*%d)")
-          if num and not IsConditional(sentence) then
-            -- only the first number becomes "#" (so "5 mana per 5 sec" keeps its 2nd number) and the sign
-            -- goes with the value, so "+32 attack power" and "32 attack power" are the same stat
-            local key = gsub(sentence, "[%+%-]?[%d%.]*%d", "#", 1)
-            local val = tonumber(num)
-            if sign == "-" then val = -val end
-            AddFx(s, key, val, true)
-          end
-        else
-          -- any "<number> <words>" or "<words> +<number>" line is a stat, whatever the words are:
-          -- "+5 Stamina", "9 Block", "+1% Dodge", "+4 mana every 5 sec", "Defense +3", "Fire Resistance: +10"
-          local sign, num, pct, label
-          local _, _, sg, nm, pc, lb = strfind(text, "^([%+%-]?)([%d%.]*%d)(%%?) (%a.*)$")
-          if nm and (sg ~= "" or not strfind(lb, "%d")) then
-            sign, num, pct, label = sg, nm, pc, lb
-          else
-            local _, _, lb2, sg2, nm2, pc2 = strfind(text, "^(%a[^%d]-):? ([%+%-])([%d%.]*%d)(%%?)$")
-            if nm2 then sign, num, pct, label = sg2, nm2, pc2, lb2 end
-          end
- 
-          if num then
-            local val = tonumber(num)
-            if sign == "-" then val = -val end
-            label = gsub(label, "[%.:%s]+$", "")
-            local low = strlower(label)
-            local bk = BaseKey(label)
-            if bk then
-              s[bk] = (s[bk] or 0) + val
-            elseif low == "all stats" or low == "to all stats" then
-              local all = { "str", "agi", "sta", "int", "spi" }
-              for i2 = 1, getn(all) do s[all[i2]] = (s[all[i2]] or 0) + val end
-            elseif low ~= "charges" and low ~= "charge" then
-              local _, _, sch = strfind(low, "^(%a+) spell damage$")
-              if not sch then _, _, sch = strfind(low, "^(%a+) damage$") end
-              if sch and SCHOOLS[sch] then
-                AddFx(s, "Increases damage done by " .. strupper(strsub(sch, 1, 1)) .. strsub(sch, 2)
-                  .. " spells and effects by up to #.", val, true)
-              elseif ALIAS[low] then
-                AddFx(s, ALIAS[low], val, true)
-              else
-                AddFx(s, label, val, false, pct == "%")
-              end
-            end
-          end
- 
-          local _, _, a, b = strfind(text, "^(%d+) %- (%d+) %a* ?Damage$")
-          if a then dmin, dmax = tonumber(a), tonumber(b) end
-          if rtext then
-            local _, _, sp = strfind(rtext, "^Speed ([%d%.]+)$")
-            if sp then speed = tonumber(sp) end
-          end
-        end
-      end
-    end
- 
-    if dmin and speed and speed > 0 then
-      s.dps = (dmin + dmax) / 2 / speed
-    end
-    return s
+  -- run a function on the next frame
+  local queue = {}
+  local runner = CreateFrame("Frame")
+  runner:SetScript("OnUpdate", function()
+    local n = getn(queue)
+    if n == 0 then return end
+    local run = queue
+    queue = {}
+    for i = 1, n do run[i]() end
+  end)
+  local function RunNextFrame(fn)
+    tinsert(queue, fn)
   end
- 
-  local function Combine(a, b)
-    local s = NewStats()
-    for i = 1, getn(BASE) do
-      local k = BASE[i].key
-      s[k] = (a[k] or 0) + (b[k] or 0)
-    end
-    local src = { a, b }
-    for n = 1, 2 do
-      local t = src[n]
-      for i = 1, getn(t.order) do
-        local label = t.order[i]
-        AddFx(s, label, t.fx[label], t.gen[label], t.pct[label])
-      end
-    end
-    return s
-  end
- 
-  ---------------------------------------------------------------- differences
- 
-  -- Shortens an "Equip:" sentence (number replaced by "#") into "<number> <short label>":
-  --   "Increases attack power by #."       -> "+5 Attack power"
-  --   "Improves your chance to hit by #%." -> "+1% Hit"
-  -- Anything that doesn't fit these shapes returns nil and the full sentence is shown.
-  local VERBS = { "Increases your ", "Increases ", "Improves your ", "Improves ", "Restores ", "Increased ", "Adds ", "Grants ", "Gives " }
- 
-  -- plain-English filler to drop from the label (edit/add to taste)
-  local FILLER = {
-    { "^damage done by (%a+) spells and effects$", "%1 damage" },
-    { "^damage and healing done by magical spells and effects$", "spell damage and healing" },
-    { "^healing done by spells and effects$", "healing" },
-    { "^the block value of your shield$", "block value" },
-    { "^chance to get an? (.+)$", "%1" },
-    { "^chance to (.+)$", "%1" },
-    { " an attack$", "" },
-    { " attacks with a shield$", "" },
-  }
- 
-  local function Condense(sentence)
-    local t = gsub(sentence, "%.$", "")
-    local stripped
-    for i = 1, getn(VERBS) do
-      local v = VERBS[i]
-      if strsub(t, 1, strlen(v)) == v then
-        t = strsub(t, strlen(v) + 1)
-        stripped = true
-        break
-      end
-    end
-    if not stripped and strsub(t, 1, 1) == "#" then stripped = true end
-    if not stripped then return nil end
- 
-    local subject, pct
-    local _, _, a, b = strfind(t, "^(.-) by up to #(%%?)$")
-    if not a then _, _, a, b = strfind(t, "^(.-) by #(%%?)$") end
-    if not a then _, _, a, b = strfind(t, "^(.-) #(%%?)$") end
-    if a then
-      subject, pct = a, b
-    else
-      local _, _, p2, rest = strfind(t, "^#(%%?) (.+)$")
-      if rest then subject, pct = rest, p2 end
-    end
-    if not subject or subject == "" then return nil end
- 
-    for i = 1, getn(FILLER) do
-      subject = gsub(subject, FILLER[i][1], FILLER[i][2])
-    end
-    subject = strupper(strsub(subject, 1, 1)) .. strsub(subject, 2)
-    return subject, (pct == "%")
-  end
- 
-  local function Num(d, dec)
-    if dec then return format("%+.1f", d) end
-    return format("%+d", d)
-  end
- 
-  local function Diff(new, old)
-    local out = {}
-    for i = 1, getn(BASE) do
-      local b = BASE[i]
-      local d = (new[b.key] or 0) - (old[b.key] or 0)
-      if abs(d) > 0.05 then
-        local col = d > 0 and GREEN or RED
-        tinsert(out, col .. Num(d, b.dec) .. " " .. b.label .. "|r")
-      end
-    end
- 
-    local seen = {}
-    local lists = { new, old }
-    for n = 1, 2 do
-      local t = lists[n]
-      for i = 1, getn(t.order) do
-        local label = t.order[i]
-        if not seen[label] then
-          seen[label] = true
-          local d = (new.fx[label] or 0) - (old.fx[label] or 0)
-          if abs(d) > 0.05 then
-            local col = d > 0 and GREEN or RED
-            local n1 = Num(d, d ~= floor(d))
-            if new.gen[label] or old.gen[label] then
-              local short, pct = Condense(label)
-              if short then
-                tinsert(out, col .. n1 .. (pct and "%" or "") .. " " .. short .. "|r")
-              else
-                tinsert(out, col .. EQUIP .. " " .. gsub(label, "#", n1, 1) .. "|r")
-              end
-            else
-              local pct = new.pct[label] or old.pct[label]
-              tinsert(out, col .. n1 .. (pct and "%" or "") .. " " .. label .. "|r")
-            end
-          end
-        end
-      end
-    end
-    return out
-  end
- 
-  ---------------------------------------------------------------- equipped items
- 
-  local scan = CreateFrame("GameTooltip", "ItemCompareScanTip", nil, "GameTooltipTemplate")
-  local cache = {}
- 
-  local function SlotID(slotName)
-    local id = GetInventorySlotInfo(slotName)
-    return id
-  end
- 
-  -- what you are wearing in a slot: { kind, stats }, read from its own tooltip and cached per item link
-  local function Equipped(slotName)
-    local id = SlotID(slotName)
-    local link = GetInventoryItemLink("player", id)
-    if not link then return nil end
- 
-    local e = cache[link]
-    if not e then
-      scan:SetOwner(WorldFrame, "ANCHOR_NONE")
-      scan:ClearLines()
-      scan:SetInventoryItem("player", id)
-      e = { kind = Identify(scan), stats = Parse(scan) }
-      cache[link] = e
-    end
-    return e
-  end
- 
-  local function IsWeapon(e)
-    return e and (e.kind == "1H" or e.kind == "MH" or e.kind == "OH")
-  end
- 
-  -- which equipped items does the hovered item replace?
-  local function Targets(kind, slot)
-    local shown = {}
-    local function add(slotName)
-      local e = Equipped(slotName)
-      if e then tinsert(shown, { slot = slotName, stats = e.stats }) end
-      return e
-    end
- 
-    if kind == "SIMPLE" then
-      add(slot)
-    elseif kind == "PAIR" then
-      add(slot[1])
-      add(slot[2])
-    else
-      local mh, oh = Equipped("MainHandSlot"), Equipped("SecondaryHandSlot")
-      if kind == "2H" then
-        if mh and IsWeapon(oh) then
-          -- dual wielding: compare against each weapon separately
-          add("MainHandSlot")
-          add("SecondaryHandSlot")
-        elseif mh and oh then
-          -- shield / held item goes away too: one combined change
-          tinsert(shown, { slot = "MainHandSlot", stats = Combine(mh.stats, oh.stats), plural = true })
-          tinsert(shown, { slot = "SecondaryHandSlot" })
-        elseif mh then
-          add("MainHandSlot")
-        elseif oh then
-          add("SecondaryHandSlot")
-        end
-      elseif kind == "1H" or kind == "MH" or kind == "OH" then
-        -- one-handers: show BOTH equipped weapons, each with its own change list
-        local offOnly = (kind == "OH")
-        if mh and (not offOnly or IsWeapon(oh)) then
-          add("MainHandSlot")
-        end
-        if oh and (IsWeapon(oh) or offOnly) then
-          add("SecondaryHandSlot")
-        end
-      elseif kind == "SHIELD" or kind == "HOLD" then
-        -- offhand slot; a two-hander in the mainhand has to come off first
-        if oh and not (mh and mh.kind == "2H") then
-          add("SecondaryHandSlot")
-        end
-      end
-    end
-    return shown
-  end
- 
-  ---------------------------------------------------------------- display
- 
-  -- invisible fontstring used only to measure text width
-  local probe = UIParent:CreateFontString(nil, "ARTWORK", "GameTooltipText")
-  probe:SetAlpha(0)
-  local MAXW = 250 -- lines wider than this wrap to the tooltip's natural width
- 
-  local function AddHeader(tooltip)
-    local name = tooltip:GetName()
- 
-    -- Snapshot the original lines before rebuilding the tooltip.
-    -- Wrapping belongs to each destination FontString, so shifted lines
-    -- must be added again with the appropriate wrap flag.
-    local snap = {}
-    for i = 1, tooltip:NumLines() do
-      local l = _G[name .. "TextLeft" .. i]
-      local r = _G[name .. "TextRight" .. i]
-      local lt = l and l:GetText()
-      local rt = r and r:IsShown() and r:GetText()
-      if (lt and lt ~= "") or (rt and rt ~= "") then
-        local e = {}
-        if lt and lt ~= "" then
-          e.lt = lt
-          e.lr, e.lg, e.lb = l:GetTextColor()
-        end
-        if rt and rt ~= "" then
-          e.rt = rt
-          e.rr, e.rg, e.rb = r:GetTextColor()
-        end
-        tinsert(snap, e)
-      end
-    end
- 
-    -- Rebuild with the header first, then restore the original content.
-    tooltip:ClearLines()
-    tooltip:AddLine(CURRENTLY_EQUIPPED, .5, .5, .5)
- 
-    for i = 1, getn(snap) do
-      local e = snap[i]
-      if e.rt then
-        tooltip:AddDoubleLine(e.lt or "", e.rt,
-          e.lr or 1, e.lg or 1, e.lb or 1,
-          e.rr or 1, e.rg or 1, e.rb or 1)
-      else
-        probe:SetText(e.lt)
-        local wrap = probe:GetStringWidth() > MAXW
-        tooltip:AddLine(e.lt, e.lr, e.lg, e.lb, wrap)
-      end
-    end
- 
-    tooltip:Show()
-  end
- 
-  ShoppingTooltip1:SetClampedToScreen(true)
-  ShoppingTooltip2:SetClampedToScreen(true)
-  local tips = { ShoppingTooltip1, ShoppingTooltip2 }
- 
-  -- put the compare tooltips on a side of the hovered tooltip where they all fit side by side
-  local function Place(tooltip, count)
-    local ui = UIParent:GetEffectiveScale()
-    local screenR = (UIParent:GetRight() or 0) * ui
-    local sc = tooltip:GetEffectiveScale()
-    local tipL = (tooltip:GetLeft() or 0) * sc
-    local tipR = (tooltip:GetRight() or 0) * sc
- 
-    local total, first = 0, 0
-    for i = 1, count do
-      local w = tips[i]:GetWidth() * tips[i]:GetEffectiveScale()
-      total = total + w
-      if i == 1 then first = w end
-    end
- 
-    local mode
-    if tipR + total <= screenR then
-      mode = "right"
-    elseif tipL - total >= 0 then
-      mode = "left"
-    elseif tipR + first <= screenR then
-      mode = "stackright"
-    else
-      mode = "stackleft"
-    end
- 
-    local prev = tooltip
-    for i = 1, count do
-      local tip = tips[i]
-      tip:ClearAllPoints()
-      if mode == "right" then
-        tip:SetPoint("TOPLEFT", prev, "TOPRIGHT", 0, 0)
-      elseif mode == "left" then
-        tip:SetPoint("TOPRIGHT", prev, "TOPLEFT", 0, 0)
-      elseif i == 1 then
-        if mode == "stackright" then
-          tip:SetPoint("TOPLEFT", tooltip, "TOPRIGHT", 0, 0)
-        else
-          tip:SetPoint("TOPRIGHT", tooltip, "TOPLEFT", 0, 0)
-        end
-      else
-        -- not enough width for all of them: stack the rest underneath the first
-        if mode == "stackright" then
-          tip:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, 0)
-        else
-          tip:SetPoint("TOPRIGHT", prev, "BOTTOMRIGHT", 0, 0)
-        end
-      end
-      prev = tip
-    end
-  end
- 
-  local function Render(tooltip, shown, new)
-    local count = getn(shown)
-    if count > 2 then count = 2 end
- 
-    for i = 1, count do
-      local tip, sh = tips[i], shown[i]
-      tip:SetOwner(tooltip, "ANCHOR_NONE")
-      tip:ClearAllPoints()
-      tip:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-      tip:SetInventoryItem("player", SlotID(sh.slot))
-      tip:Show()
-      AddHeader(tip)
- 
-      -- the change list, only when something actually changes
-      if sh.stats then
-        local lines = Diff(new, sh.stats)
-        if getn(lines) > 0 then
-          tip:AddLine(" ")
-          if sh.plural then
-            tip:AddLine(T["If you replace these items, the following stat changes will occur:"], 1, .82, 0, true)
-          else
-            tip:AddLine(T["If you replace this item, the following stat changes will occur:"], 1, .82, 0, true)
-          end
-          for m = 1, getn(lines) do tip:AddLine(lines[m], 1, 1, 1, true) end
-          tip:Show()
-        end
-      end
-    end
- 
-    for i = count + 1, 2 do tips[i]:Hide() end
-    Place(tooltip, count)
-    return count
-  end
- 
-  ---------------------------------------------------------------- when to compare
- 
-  -- the auction house always compares (like the game's own tooltip), everything else needs shift
-  local function InAuction()
-    if not (AuctionFrame and AuctionFrame:IsVisible()) then return false end
-    local f = GetMouseFocus()
-    local depth = 0
-    while f and depth < 8 do
-      if f == AuctionFrame then return true end
-      f = f:GetParent()
-      depth = depth + 1
-    end
-    return false
-  end
- 
-  -- hovering your own paperdoll: nothing to compare
-  local function OnPaperdoll()
-    local f = GetMouseFocus()
-    local n = f and f:GetName()
-    return n and strfind(n, "^Character.+Slot$") and true or false
-  end
- 
-  local state = { sig = nil, count = 0, lines = 0, lines2 = 0 }
- 
-  local function HideCompare()
-    ShoppingTooltip1:Hide()
-    ShoppingTooltip2:Hide()
-    state.sig, state.count, state.lines, state.lines2 = nil, 0, 0, 0
-  end
- 
-  local function ShowCompare(tooltip)
-    local auction = InAuction()
-    if not (IsShiftKeyDown() or auction) or OnPaperdoll() then
-      if state.sig then HideCompare() end
-      return
-    end
- 
-    -- cheap signature so the tooltip is only re-read when it actually changed
-    local name = tooltip:GetName()
-    local n = tooltip:NumLines()
-    local l1, l2, ln = _G[name .. "TextLeft1"], _G[name .. "TextLeft2"], _G[name .. "TextLeft" .. n]
-    local sig = name .. (auction and "A" or "S") .. n .. (l1 and l1:GetText() or "")
-      .. "|" .. (l2 and l2:GetText() or "") .. "|" .. (ln and ln:GetText() or "")
- 
-    if state.sig == sig then
-      if state.count == 0 then return end
-      -- something else (e.g. the game's own compare) overwrote our tooltip: draw it again
-      if ShoppingTooltip1:IsShown() and ShoppingTooltip1:NumLines() == state.lines
-        and (state.count < 2 or (ShoppingTooltip2:IsShown() and ShoppingTooltip2:NumLines() == state.lines2)) then
-        return
-      end
-    end
- 
-    local kind, slot = Identify(tooltip)
-    local shown = kind and Targets(kind, slot)
-    if not shown or getn(shown) == 0 then
-      HideCompare()
-      state.sig = sig
-      return
-    end
- 
-    local count = Render(tooltip, shown, Parse(tooltip))
-    state.sig, state.count, state.lines = sig, count, ShoppingTooltip1:NumLines()
-    state.lines2 = (count == 2) and ShoppingTooltip2:NumLines() or 0
-  end
- 
+
   -- the game's own compare would fight with ours
   if GameTooltip_ShowCompareItem then
     GameTooltip_ShowCompareItem = function() end
   end
- 
-  -- show item compare on default tooltips
-  local default = CreateFrame("Frame", nil, GameTooltip)
-  default:SetScript("OnUpdate", function()
-    ShowCompare(GameTooltip)
+
+  ---------------------------------------------------------------- compare
+
+  local function ShowCompareItem(tooltip, link, shift)
+    tooltip = tooltip or GameTooltip
+    shift = shift or IsShiftKeyDown()
+
+    if not link then return end
+    if not shift and (not SHOW_ALWAYS or IsEquipped(link)) then return end
+
+    local tips = tooltip.shoppingTooltips or { ShoppingTooltip1, ShoppingTooltip2 }
+    local shopping1, shopping2 = tips[1], tips[2]
+
+    local SEPARATION = 6
+    local backdrop = shopping1.GetBackdrop and shopping1:GetBackdrop()
+    local GAP = SEPARATION + ((type(backdrop) == "table" and backdrop.edgeSize) or 0)
+
+    local item1, item2 = nil, nil
+    local side = "left"
+    if shopping1:SetHyperlinkCompareItem(link, 1, shift, tooltip) then item1 = true end
+    if shopping2:SetHyperlinkCompareItem(link, 2, shift, tooltip) then item2 = true end
+
+    -- find correct side
+    local leftPos = tooltip:GetLeft() or 0
+    local rightPos = tooltip:GetRight() or 0
+    local rightDist = GetScreenWidth() - rightPos
+
+    if leftPos and (rightDist < leftPos) then
+      side = "left"
+    else
+      side = "right"
+    end
+
+    -- see if we should slide the tooltip
+    local anchorType = tooltip.GetAnchorType and tooltip:GetAnchorType()
+    if anchorType and anchorType ~= "ANCHOR_PRESERVE" and tooltip.SetAnchorType then
+      local totalWidth = 0
+      if item1 then totalWidth = totalWidth + shopping1:GetWidth() end
+      if item2 then totalWidth = totalWidth + shopping2:GetWidth() end
+
+      if side == "left" and totalWidth > leftPos then
+        tooltip:SetAnchorType(anchorType, (totalWidth - leftPos), 0)
+      elseif side == "right" and (rightPos + totalWidth) > GetScreenWidth() then
+        tooltip:SetAnchorType(anchorType, -((rightPos + totalWidth) - GetScreenWidth()), 0)
+      end
+    end
+
+    if item1 then
+      shopping1:SetOwner(tooltip, "ANCHOR_NONE")
+      shopping1:ClearAllPoints()
+      if side == "left" then
+        shopping1:SetPoint("TOPRIGHT", tooltip, "TOPLEFT", -GAP, -10)
+      else
+        shopping1:SetPoint("TOPLEFT", tooltip, "TOPRIGHT", GAP, -10)
+      end
+      shopping1:SetHyperlinkCompareItem(link, 1, shift, tooltip)
+      shopping1:Show()
+
+      if item2 then
+        shopping2:SetOwner(shopping1, "ANCHOR_NONE")
+        shopping2:ClearAllPoints()
+        if side == "left" then
+          shopping2:SetPoint("TOPRIGHT", shopping1, "TOPLEFT", -GAP, 0)
+        else
+          shopping2:SetPoint("TOPLEFT", shopping1, "TOPRIGHT", GAP, 0)
+        end
+        shopping2:SetHyperlinkCompareItem(link, 2, shift, tooltip)
+        shopping2:Show()
+      end
+    end
+  end
+
+  local function HideCompareItem(tooltip)
+    local tips = tooltip.shoppingTooltips or { ShoppingTooltip1, ShoppingTooltip2 }
+    tips[1]:Hide()
+    tips[2]:Hide()
+  end
+
+  ---------------------------------------------------------------- merchant / auction
+
+  -- the game asks for these on shift-hover in the vendor and auction frames;
+  -- they always compare, so they pass shift = 1
+  local prevMerchant = ShoppingTooltip1.SetMerchantCompareItem
+  local function SetMerchantCompareItem(tip, index, compareItem)
+    if compareItem == 1 then
+      ShowCompareItem(nil, GetMerchantItemLink(index), 1)
+      return false
+    end
+    return prevMerchant and prevMerchant(tip, index, compareItem)
+  end
+
+  local prevAuction = ShoppingTooltip1.SetAuctionCompareItem
+  local function SetAuctionCompareItem(tip, type, index, compareItem)
+    if compareItem == 1 then
+      ShowCompareItem(nil, GetAuctionItemLink(type, index), 1)
+      return false
+    end
+    return prevAuction and prevAuction(tip, type, index, compareItem)
+  end
+
+  ShoppingTooltip1.SetMerchantCompareItem = SetMerchantCompareItem
+  ShoppingTooltip2.SetMerchantCompareItem = SetMerchantCompareItem
+  ShoppingTooltip1.SetAuctionCompareItem  = SetAuctionCompareItem
+  ShoppingTooltip2.SetAuctionCompareItem  = SetAuctionCompareItem
+
+  ---------------------------------------------------------------- tooltip hooks
+
+  -- tooltip setter -> function that turns its arguments into an item link
+  local TooltipHooks = {
+    SetLootRollItem = GetLootRollItemLink,
+    SetLootItem = GetLootSlotLink,
+    SetQuestLogItem = GetQuestLogItemLink,
+    SetQuestItem = GetQuestItemLink,
+    SetHyperlink = function(link) return link end,
+    SetBagItem = GetContainerItemLink,
+    SetInboxItem = GetInboxItemLink,
+    SetInventoryItem = GetInventoryItemLink,
+    SetTradeSkillItem = function(skillIndex, reagentIndex)
+      if reagentIndex then
+        return GetTradeSkillReagentItemLink(skillIndex, reagentIndex)
+      else
+        return GetTradeSkillItemLink(skillIndex)
+      end
+    end,
+    SetAuctionSellItem = GetAuctionSellItemLink,
+    SetTradePlayerItem = GetTradePlayerItemLink,
+    SetTradeTargetItem = GetTradeTargetItemLink,
+  }
+
+  -- Guda anchors its item tooltips with ANCHOR_NONE and its own SetPoint, and
+  -- other tooltip modules then move every ANCHOR_NONE tooltip. Reading the rect
+  -- inside the Set* call picks the side against the position the tooltip is
+  -- about to leave, so place the compare a frame later.
+  local deferred = false
+  ShaguTweaks.HookAddonOrVariable("Guda", function()
+    deferred = true
   end)
-  default:SetScript("OnHide", function()
-    if not ItemRefTooltip:IsShown() then HideCompare() end
+
+  -- the item each hooked tooltip shows, for MODIFIER_STATE_CHANGED. Every Set*
+  -- clears the tooltip before it builds, so OnTooltipCleared drops the link of
+  -- the previous content before the hook stores the new one.
+  local links = {}
+  local function forget(tip)
+    tip = tip or this
+    links[tip] = nil
+  end
+
+  local function makeHook(getter)
+    return function(tooltip, arg1, arg2, arg3)
+      local link = getter(arg1, arg2, arg3)
+      links[tooltip] = link
+      if not deferred then
+        return ShowCompareItem(tooltip, link)
+      end
+      RunNextFrame(function()
+        if tooltip:IsShown() then
+          ShowCompareItem(tooltip, link)
+        end
+      end)
+    end
+  end
+
+  local function HookTooltip(tooltip)
+    for setter, getter in pairs(TooltipHooks) do
+      -- skip setters or link getters this client does not have
+      if getter and tooltip[setter] then
+        hooksecurefunc(tooltip, setter, makeHook(getter))
+      end
+    end
+    HookScript(tooltip, "OnTooltipCleared", forget)
+    HookScript(tooltip, "OnHide", forget)
+  end
+
+  -- pressing or releasing shift over an item toggles its comparison at once.
+  -- Merchant and auction comparisons show regardless of shift and never set
+  -- a link, so they stay up.
+  local modifier = CreateFrame("Frame")
+  modifier:RegisterEvent("MODIFIER_STATE_CHANGED")
+  modifier:SetScript("OnEvent", function()
+    local key = arg1
+    if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
+
+    local shift = IsShiftKeyDown()
+    for tooltip, link in pairs(links) do
+      -- a hidden tooltip got its item from a scan, not a hover
+      if tooltip:IsShown() then
+        if shift then
+          ShowCompareItem(tooltip, link, shift)
+        elseif not SHOW_ALWAYS or IsEquipped(link) then
+          HideCompareItem(tooltip)
+        end
+      end
+    end
   end)
- 
-  -- show compare on clicked chat links (only while no other tooltip is up)
-  local ref = CreateFrame("Frame", nil, ItemRefTooltip)
-  ref:SetScript("OnUpdate", function()
-    if GameTooltip:IsShown() then return end
-    ShowCompare(ItemRefTooltip)
-  end)
-  ref:SetScript("OnHide", function()
-    if not GameTooltip:IsShown() then HideCompare() end
-  end)
- 
-  -- show compare on atlas tooltips
-  ShaguTweaks.HookAddonOrVariable("AtlasLoot", function()
-    local atlas = CreateFrame("Frame", nil, AtlasLootTooltip)
-    atlas:SetScript("OnUpdate", function()
-      ShowCompare(AtlasLootTooltip)
-      if AtlasLootTooltip2 then ShowCompare(AtlasLootTooltip2) end
-    end)
-  end)
+
+  HookTooltip(GameTooltip)
 end

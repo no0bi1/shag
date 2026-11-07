@@ -19,7 +19,6 @@ module.enable = function(self)
   end
 
   local links = {}
-  local hooked = {}
 
   local function IsEquippedItem(link)
     if not link then return false end
@@ -114,23 +113,6 @@ module.enable = function(self)
     end
   end
 
-  local function HookMethod(tooltip, method, getter)
-    if not tooltip or type(tooltip[method]) ~= "function" or hooked[tooltip .. method] then
-      return
-    end
-    local original = tooltip[method]
-    tooltip[method] = function(frame, ...)
-      local a1, a2, a3 = arg1, arg2, arg3
-      -- Capture the first three arguments without relying on newer Lua features.
-      local link = getter(a1, a2, a3)
-      local result = original(frame, ...)
-      links[frame] = link
-      ShowCompareItem(frame, link)
-      return result
-    end
-    hooked[tooltip .. method] = true
-  end
-
   local TooltipHooks = {
     SetLootRollItem = GetLootRollItemLink,
     SetLootItem = GetLootSlotLink,
@@ -159,9 +141,10 @@ module.enable = function(self)
         -- Lua 5.0 has no vararg table. Use a small explicit wrapper for the
         -- arguments accepted by the tooltip setters.
         if type(tooltip[method]) == "function" then
-          local original = tooltip[method]
-          tooltip[method] = function(frame, a1, a2, a3)
-            local link = getter(a1, a2, a3)
+          local methodName, linkGetter = method, getter
+          local original = tooltip[methodName]
+          tooltip[methodName] = function(frame, a1, a2, a3)
+            local link = linkGetter(a1, a2, a3)
             local result = original(frame, a1, a2, a3)
             links[frame] = link
             ShowCompareItem(frame, link)

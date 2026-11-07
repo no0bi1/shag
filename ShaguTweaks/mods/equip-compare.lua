@@ -18,7 +18,9 @@ module.enable = function(self)
     tooltip = tooltip or GameTooltip
     shift = shift or IsShiftKeyDown()
 
-    if not link or not shift then
+    if not link or not shift
+      or (C_Item and C_Item.IsEquippedItem
+        and C_Item.IsEquippedItem(link)) then
       return
     end
 

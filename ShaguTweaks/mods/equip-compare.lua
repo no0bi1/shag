@@ -95,11 +95,11 @@ module.enable = function(self)
 
       if side == "left" then
         shoppingTooltip1:SetPoint(
-          "TOPRIGHT", tooltip, "TOPLEFT", -gap, 0
+          "TOPRIGHT", tooltip, "TOPLEFT", -gap, -10
         )
       else
         shoppingTooltip1:SetPoint(
-          "TOPLEFT", tooltip, "TOPRIGHT", gap, 0
+          "TOPLEFT", tooltip, "TOPRIGHT", gap, -10
         )
       end
 

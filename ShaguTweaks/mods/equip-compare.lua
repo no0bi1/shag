@@ -251,8 +251,12 @@ module.enable = function(self)
       end
     end
 
-    tooltip:HookScript("OnTooltipCleared", ForgetTooltip)
-    tooltip:HookScript("OnHide", ForgetTooltip)
+    tooltip:HookScript("OnTooltipCleared", function()
+      links[tooltip] = nil
+    end)
+    tooltip:HookScript("OnHide", function()
+      links[tooltip] = nil
+    end)
   end
 
   --------------------------------------------------

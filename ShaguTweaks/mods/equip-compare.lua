@@ -30,7 +30,7 @@ module.enable = function(self)
         ShoppingTooltip2,
       })
 
-    local separation = 2
+    local separation = -20
     local backdrop = shoppingTooltip1.GetBackdrop
       and shoppingTooltip1:GetBackdrop()
 
@@ -95,11 +95,11 @@ module.enable = function(self)
 
       if side == "left" then
         shoppingTooltip1:SetPoint(
-          "TOPRIGHT", tooltip, "TOPLEFT", -gap, -10
+          "TOPRIGHT", tooltip, "TOPLEFT", -gap, 0
         )
       else
         shoppingTooltip1:SetPoint(
-          "TOPLEFT", tooltip, "TOPRIGHT", gap, -10
+          "TOPLEFT", tooltip, "TOPRIGHT", gap, 0
         )
       end
 

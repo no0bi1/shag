@@ -290,38 +290,29 @@ module.enable = function(self)
   HookTooltip(GameTooltip)
 
   --------------------------------------------------
-  -- Chat item hyperlinks
+  -- Chat item links (ItemRefTooltip)
   --------------------------------------------------
 
-  local function HookChatFrame(chatFrame)
-    if not chatFrame or not chatFrame.HookScript then
+  HookTooltip(ItemRefTooltip)
+
+  -- Chat links use ItemRefTooltip rather than the chat frame's GameTooltip.
+  -- Poll it like the main branch so comparisons update as its contents change.
+  local ref = CreateFrame("Frame", nil, ItemRefTooltip)
+  ref:SetScript("OnUpdate", function()
+    if GameTooltip:IsShown() then
       return
     end
 
-    chatFrame:HookScript("OnHyperlinkEnter", function(self, link)
-      if not link or not string.find(link, "^item:") then
-        return
-      end
+    local link = links[ItemRefTooltip]
+    if link then
+      ShowCompareItem(ItemRefTooltip, link)
+    end
+  end)
 
-      links[GameTooltip] = link
-
-      -- SetHyperlink may already have displayed the comparisons.
-      if not ShoppingTooltip1:IsShown()
-        and not ShoppingTooltip2:IsShown() then
-        ShowCompareItem(GameTooltip, link)
-      end
-    end)
-
-    chatFrame:HookScript("OnHyperlinkLeave", function(self, link)
-      if link and string.find(link, "^item:") then
-        links[GameTooltip] = nil
-        HideCompareItem(GameTooltip)
-      end
-    end)
-  end
-
-  for i = 1, (NUM_CHAT_WINDOWS or 0) do
-    HookChatFrame(_G["ChatFrame" .. i])
-  end
+  ref:SetScript("OnHide", function()
+    if not GameTooltip:IsShown() then
+      HideCompareItem(ItemRefTooltip)
+    end
+  end)
 
 end

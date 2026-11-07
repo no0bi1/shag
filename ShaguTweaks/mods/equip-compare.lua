@@ -30,7 +30,7 @@ module.enable = function(self)
         ShoppingTooltip2,
       })
 
-    local separation = 6
+    local separation = 2
     local backdrop = shoppingTooltip1.GetBackdrop
       and shoppingTooltip1:GetBackdrop()
 

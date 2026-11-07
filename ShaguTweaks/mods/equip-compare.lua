@@ -289,4 +289,39 @@ module.enable = function(self)
 
   HookTooltip(GameTooltip)
 
+  --------------------------------------------------
+  -- Chat item hyperlinks
+  --------------------------------------------------
+
+  local function HookChatFrame(chatFrame)
+    if not chatFrame or not chatFrame.HookScript then
+      return
+    end
+
+    chatFrame:HookScript("OnHyperlinkEnter", function(self, link)
+      if not link or not string.find(link, "^item:") then
+        return
+      end
+
+      links[GameTooltip] = link
+
+      -- SetHyperlink may already have displayed the comparisons.
+      if not ShoppingTooltip1:IsShown()
+        and not ShoppingTooltip2:IsShown() then
+        ShowCompareItem(GameTooltip, link)
+      end
+    end)
+
+    chatFrame:HookScript("OnHyperlinkLeave", function(self, link)
+      if link and string.find(link, "^item:") then
+        links[GameTooltip] = nil
+        HideCompareItem(GameTooltip)
+      end
+    end)
+  end
+
+  for i = 1, (NUM_CHAT_WINDOWS or 0) do
+    HookChatFrame(_G["ChatFrame" .. i])
+  end
+
 end

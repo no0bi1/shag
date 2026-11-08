@@ -46,8 +46,4 @@ module.enable = function(self)
       this.plate:SetHeight(oheight*UIParent:GetScale())
     end)
   end)
-
-  table.insert(ShaguTweaks.libnameplate.OnUpdate, function()
-    this.new:SetAlpha(this:GetAlpha())
-  end)
 end

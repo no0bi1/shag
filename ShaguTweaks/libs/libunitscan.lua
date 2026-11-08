@@ -70,6 +70,49 @@ local function AddData(db, name, class, level, elite)
   end
 end
 
+-- Cache real player units directly through ClassicAPI. A unit token is
+-- authoritative: NPCs are recorded as mobs and are never sent to WHO.
+local function RememberUnit(unit)
+  if not unit or not UnitExists(unit) then return end
+
+  local name = UnitName(unit)
+  if not name then return end
+
+  if UnitIsPlayer(unit) then
+    local guid = UnitGUID(unit)
+    local class = UnitClassBase and UnitClassBase(unit)
+    if not class then
+      local _
+      _, class = UnitClass(unit)
+      class = L["class"][class] or class
+    end
+
+    local level = UnitLevel(unit)
+    AddData("players", name, class, level)
+
+    if guid and C_PlayerCache and C_PlayerCache.RememberPlayer then
+      local _, race = UnitRace(unit)
+      local sex = UnitSex(unit)
+      sex = sex and (sex - 2) or nil
+      C_PlayerCache.RememberPlayer(guid, name, class, race, sex)
+    end
+  else
+    local _, class = UnitClass(unit)
+    local level = UnitLevel(unit)
+    local elite = UnitClassification(unit)
+    AddData("mobs", name, class, level, elite)
+
+    -- Cancel a queued or in-flight lookup if this name is known to be an NPC.
+    queue[name] = nil
+    if whoRequestedName and string.lower(whoRequestedName) == string.lower(name) then
+      whoRequestedIsNpc = true
+    end
+    if ShaguTweaks.ResolveSocialColorMessages then
+      ShaguTweaks.ResolveSocialColorMessages(name, nil)
+    end
+  end
+end
+
 local function FinishWho(found, timedOut)
   if not whoRequestedName then return end
 
@@ -122,6 +165,7 @@ libunitscan:RegisterEvent("PARTY_MEMBERS_CHANGED")
 libunitscan:RegisterEvent("PLAYER_TARGET_CHANGED")
 libunitscan:RegisterEvent("WHO_LIST_UPDATE")
 libunitscan:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+libunitscan:RegisterEvent("NAME_PLATE_UNIT_ADDED")
 libunitscan:SetScript("OnEvent", function()
   if event == "PLAYER_ENTERING_WORLD" then
     -- load database
@@ -134,6 +178,7 @@ libunitscan:SetScript("OnEvent", function()
     local _, class = UnitClass("player")
     local level = UnitLevel("player")
     AddData("players", name, class, level)
+    RememberUnit("player")
 
   elseif event == "FRIENDLIST_UPDATE" then
     local name, class, level
@@ -159,6 +204,7 @@ libunitscan:SetScript("OnEvent", function()
       name, _, SubGroup, level, class = GetRaidRosterInfo(i)
       class = L["class"][class] or nil
       AddData("players", name, class, level)
+      RememberUnit("raid" .. i)
     end
 
   elseif event == "PARTY_MEMBERS_CHANGED" then
@@ -169,6 +215,7 @@ libunitscan:SetScript("OnEvent", function()
       name = UnitName(unit)
       level = UnitLevel(unit)
       AddData("players", name, class, level)
+      RememberUnit(unit)
     end
 
   elseif event == "WHO_LIST_UPDATE" then
@@ -197,33 +244,11 @@ libunitscan:SetScript("OnEvent", function()
       FinishWho(false)
     end
 
-  elseif event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" then
-    local scan = event == "PLAYER_TARGET_CHANGED" and "target" or "mouseover"
-    local name, class, level, elite, _
-    if UnitIsPlayer(scan) then
-      _, class = UnitClass(scan)
-      level = UnitLevel(scan)
-      name = UnitName(scan)
-      AddData("players", name, class, level)
-    else
-      _, class = UnitClass(scan)
-      elite = UnitClassification(scan)
-      level = UnitLevel(scan)
-      name = UnitName(scan)
-      AddData("mobs", name, class, level, elite)
-      if name then
-        -- A chat sender already identified as an NPC must never trigger WHO.
-        queue[name] = nil
-        -- If its lookup was already sent, keep WHO routed silently until the
-        -- response arrives, but discard that response instead of caching it.
-        if whoRequestedName and string.lower(whoRequestedName) == string.lower(name) then
-          whoRequestedIsNpc = true
-        end
-        if ShaguTweaks.ResolveSocialColorMessages then
-          ShaguTweaks.ResolveSocialColorMessages(name, nil)
-        end
-      end
-    end
+  elseif event == "UPDATE_MOUSEOVER_UNIT" or event == "PLAYER_TARGET_CHANGED" or event == "NAME_PLATE_UNIT_ADDED" then
+    local scan = event == "PLAYER_TARGET_CHANGED" and "target"
+             or event == "NAME_PLATE_UNIT_ADDED" and arg1
+             or "mouseover"
+    RememberUnit(scan)
   end
 end)
 

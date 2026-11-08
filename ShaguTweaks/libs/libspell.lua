@@ -1,50 +1,51 @@
-local _G = ShaguTweaks.GetGlobalEnv()
-local GetExpansion = ShaguTweaks.GetExpansion
-local libtipscan = ShaguTweaks.libtipscan
-
-local scanner = libtipscan:GetScanner("libspell")
 local libspell = {}
 
 -- [ GetSpellMaxRank ]
--- Returns the maximum rank of a players spell.
--- 'name'       [string]            spellname to query
--- return:      [string],[number]   maximum rank in characters and the number
---                                  e.g "Rank 1" and "1"
+-- Returns the maximum rank of a player's spell.
+-- 'name'       [string]            spell name to query (case-insensitive)
+-- return:      [string],[number]   maximum rank text and numeric rank
+--                                  e.g. "Rank 1" and 1
 local spellmaxrank = {}
 function libspell.GetSpellMaxRank(name)
-  local cache = spellmaxrank[name]
+  if not name then return end
+
+  local key = string.lower(name)
+  local cache = spellmaxrank[key]
   if cache then return cache[1], cache[2] end
 
-  local rank = { 0, nil}
+  local rank = { 0, nil }
   for i = 1, GetNumSpellTabs() do
     local _, _, offset, num = GetSpellTabInfo(i)
     local bookType = BOOKTYPE_SPELL
     for id = offset + 1, offset + num do
       local spellName, spellRank = GetSpellName(id, bookType)
-      if spellName == name then
+      if spellName and key == string.lower(spellName) then
         if not rank[2] then rank[2] = spellRank end
 
-        local _, _, numRank = string.find(spellRank, " (%d+)$")
+        local _, _, numRank = string.find(spellRank or "", " (%d+)$")
         if numRank and tonumber(numRank) > rank[1] then
-          rank = { tonumber(numRank), spellRank}
+          rank = { tonumber(numRank), spellRank }
         end
       end
     end
   end
 
-  spellmaxrank[name] = { rank[2], rank[1] }
+  spellmaxrank[key] = { rank[2], rank[1] }
   return rank[2], rank[1]
 end
 
 -- [ GetSpellIndex ]
--- Returns the spellbook index and bookid of the given spell.
--- 'name'       [string]            spellname to query
+-- Returns the spellbook slot and book type for the given spell.
+-- 'name'       [string]            spell name to query (case-insensitive)
 -- 'rank'       [string]            rank to query (optional)
--- return:      [number],[string]   spell index and spellbook id
+-- return:      [number],[string]   spellbook slot and spellbook type
 local spellindex = {}
 function libspell.GetSpellIndex(name, rank)
   if not name then return end
-  local cache = spellindex[name..(rank or "")]
+
+  name = string.lower(name)
+  local key = name .. (rank and ("(" .. rank .. ")") or "")
+  local cache = spellindex[key]
   if cache then return cache[1], cache[2] end
 
   if not rank then rank = libspell.GetSpellMaxRank(name) end
@@ -54,76 +55,77 @@ function libspell.GetSpellIndex(name, rank)
     local bookType = BOOKTYPE_SPELL
     for id = offset + 1, offset + num do
       local spellName, spellRank = GetSpellName(id, bookType)
-      if rank and rank == spellRank and name == spellName then
-        spellindex[name..rank] = { id, bookType }
+      if spellName and rank and rank == spellRank and name == string.lower(spellName) then
+        spellindex[name .. "(" .. rank .. ")"] = { id, bookType }
         return id, bookType
-      elseif not rank and name == spellName then
+      elseif spellName and not rank and name == string.lower(spellName) then
         spellindex[name] = { id, bookType }
         return id, bookType
       end
     end
   end
-  spellindex[name..(rank or "")] = { nil }
+
+  spellindex[key] = { nil }
   return nil
 end
 
 -- [ GetSpellInfo ]
--- Returns several information about a spell.
--- 'index'      [string/number]     Spellname or Index of a spell in the spellbook
--- 'bookType'   [string]            Type of spellbook (optional)
+-- Returns spell information using ClassicAPI rather than parsing tooltip text.
+-- 'index'      [string/number]     Spell name (optionally with rank) or spellbook slot
+-- 'bookType'   [string]            BOOKTYPE_SPELL or BOOKTYPE_PET for numeric slots
 -- return:
---              [string]            Name of the spell
---              [string]            Secondary text associated with the spell
---                                  (e.g."Rank 5", "Racial", etc.)
---              [string]            Path to an icon texture for the spell
---              [number]            Casting time of the spell in milliseconds
---              [number]            Minimum range from the target required to cast the spell
---              [number]            Maximum range from the target at which you can cast the spell
+--              [string]            Spell name
+--              [string]            Rank / secondary text
+--              [string]            Icon texture
+--              [number]            Casting time in milliseconds
+--              [number]            Minimum range
+--              [number]            Maximum range
+--              [number]            Spellbook slot
+--              [string]            Spellbook type
+--              [number]            Numeric spell ID
 local spellinfo = {}
 function libspell.GetSpellInfo(index, bookType)
   local cache = spellinfo[index]
-  if cache then return cache[1], cache[2], cache[3], cache[4], cache[5], cache[6] end
+  if cache then
+    return unpack(cache, 1, cache.n)
+  end
 
-  local name, rank, id
-  local icon = ""
-  local castingTime = 0
-  local minRange = 0
-  local maxRange = 0
-
+  local slot
   if type(index) == "string" then
     local _, _, sname, srank = string.find(index, '(.+)%((.+)%)')
-    name = sname or index
-    rank = srank or libspell.GetSpellMaxRank(name)
-    id, bookType = libspell.GetSpellIndex(name, rank)
+    local name = sname or index
+    local rank = srank or libspell.GetSpellMaxRank(name)
+    slot, bookType = libspell.GetSpellIndex(name, rank)
   else
-    name, rank = GetSpellName(index, bookType)
-    id, bookType = libspell.GetSpellIndex(name, rank)
-  end
-
-  if name and id then
-    icon = GetSpellTexture(id, bookType)
-  end
-
-  if id then
-    scanner:SetSpell(id, bookType)
-    local _, sec = scanner:Find(gsub(SPELL_CAST_TIME_SEC, "%%.3g", "%(.+%)"))
-    local _, min = scanner:Find(gsub(SPELL_CAST_TIME_MIN, "%%.3g", "%(.+%)"))
-    local _, range = scanner:Find(gsub(SPELL_RANGE, "%%s", "%(.+%)"))
-    castingTime = (tonumber(sec) or tonumber(min) or 0) * 1000
-    if range then
-      local _, _, min, max = string.find(range, "(.+)-(.+)")
-      if min and max then
-        minRange = tonumber(min)
-        maxRange = tonumber(max)
-      else
-        minRange = 0
-        maxRange = tonumber(range)
-      end
+    if not bookType or (bookType ~= BOOKTYPE_SPELL and bookType ~= BOOKTYPE_PET) then
+      return nil
     end
+    slot = index
   end
 
-  spellinfo[index] = { name, rank, icon, castingTime, minRange, maxRange }
-  return name, rank, icon, castingTime, minRange, maxRange
+  if not slot or not bookType then return nil end
+
+  -- ClassicAPI returns: name, rank, icon, cost, isFunnel, powerType,
+  -- castTime(ms), minRange, maxRange, spellID.
+  -- Preserve libspell's original first six return positions.
+  local name, rank, icon, _, _, _, castingTime, minRange, maxRange, spellId =
+    GetSpellInfo(slot, bookType)
+
+  local result = {
+    name, rank, icon, castingTime, minRange, maxRange, slot, bookType, spellId,
+    n = 9,
+  }
+  spellinfo[index] = result
+  return unpack(result, 1, result.n)
 end
+
+-- Reset spell caches whenever spells are learned or unlearned.
+local resetCache = CreateFrame("Frame")
+resetCache:RegisterEvent("LEARNED_SPELL_IN_TAB")
+resetCache:SetScript("OnEvent", function()
+  for key in pairs(spellmaxrank) do spellmaxrank[key] = nil end
+  for key in pairs(spellindex) do spellindex[key] = nil end
+  for key in pairs(spellinfo) do spellinfo[key] = nil end
+end)
 
 ShaguTweaks.libspell = libspell

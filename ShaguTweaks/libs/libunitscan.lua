@@ -85,14 +85,16 @@ libunitscan:SetScript("OnEvent", function()
 
   elseif event == "FRIENDLIST_UPDATE" then
     for i = 1, GetNumFriends() do
-      local name, level = GetFriendInfo(i)
-      AddRosterLevel(name, level)
+      local name, level, class = GetFriendInfo(i)
+      class = L["class"][class] or nil
+      AddPlayerData(name, class, level)
     end
 
   elseif event == "GUILD_ROSTER_UPDATE" then
     for i = 1, GetNumGuildMembers() do
-      local name, _, _, level = GetGuildRosterInfo(i)
-      AddRosterLevel(name, level)
+      local name, _, _, level, class = GetGuildRosterInfo(i)
+      class = L["class"][class] or nil
+      AddPlayerData(name, class, level)
     end
 
   elseif event == "RAID_ROSTER_UPDATE" then

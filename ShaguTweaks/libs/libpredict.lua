@@ -914,7 +914,7 @@ hooksecurefunc("UseAction", function(slot, target, selfcast)
   end
 end)
 
-libpredict.sender = CreateFrame("Frame", "pfPredictionSender", UIParent)
+libpredict.sender = CreateFrame("Frame", "ShaguTweaksPredictionSender", UIParent)
 -- cleared when a HealComm addon already broadcasts this player's casts
 libpredict.sender.enabled = true
 libpredict.sender.SendHealCommMsg = function(self, msg)

@@ -72,35 +72,104 @@ module.enable = function(self)
     plate.castbar:Hide()
   end
 
-  -- scan for casts and show castbar
-  table.insert(ShaguTweaks.libnameplate.OnUpdate, function()
-    -- create castbar if not existing
-    if not this.castbar then create_castbar(this) end
+  -- ClassicAPI binds each visible engine nameplate to its unit token.
+  -- Shagu's libnameplate discovers these same engine frames as its "plate".
+  local plateUnits = {}
+  local unitPlates = {}
 
-    local unit = ShaguTweaks.libcast:GetUnitForNamePlate(this)
-    local cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitCastingInfo(unit)
+  local events = CreateFrame("Frame")
+  events:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+  events:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+  events:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- read enemy casts from SuperWoW if enabled
-    if ShaguTweaks.superwow_active then
-      cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitCastingInfo(this:GetName(1))
+  local function BindNamePlate(unit)
+    if not unit or not C_NamePlate or not C_NamePlate.GetNamePlateForUnit then return end
+    local plate = C_NamePlate.GetNamePlateForUnit(unit)
+    if not plate then return end
+
+    local previous = plateUnits[plate]
+    if previous then unitPlates[previous] = nil end
+
+    plateUnits[plate] = unit
+    unitPlates[unit] = plate
+  end
+
+  local function UnbindNamePlate(unit)
+    local plate = unitPlates[unit]
+    if plate then
+      plateUnits[plate] = nil
+      unitPlates[unit] = nil
+      if plate.castbar then plate.castbar:Hide() end
+    end
+  end
+
+  local function RefreshNamePlates()
+    plateUnits = {}
+    unitPlates = {}
+    if not C_NamePlate or not C_NamePlate.GetNamePlateForUnit then return end
+    for i = 1, 100 do
+      BindNamePlate("nameplate" .. i)
+    end
+  end
+
+  events:SetScript("OnEvent", function()
+    if event == "NAME_PLATE_UNIT_ADDED" then
+      BindNamePlate(arg1)
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
+      UnbindNamePlate(arg1)
+    elseif event == "PLAYER_ENTERING_WORLD" then
+      RefreshNamePlates()
+    end
+  end)
+
+  -- Read cast data directly from ClassicAPI. The timestamps are milliseconds;
+  -- duration objects keep the bar synchronized without manual time arithmetic.
+  local function GetCastInfo(unit)
+    local name, _, texture, startMs, endMs, _, _, noInterrupt, spellID =
+      C_Spell.UnitCastingInfo(unit)
+    local duration, isChannel
+
+    if name then
+      duration = UnitCastingDuration(unit)
+    else
+      name, _, texture, startMs, endMs, _, noInterrupt, spellID =
+        C_Spell.UnitChannelInfo(unit)
+      if name then
+        duration = UnitChannelDuration(unit)
+        isChannel = true
+      end
     end
 
-    if cast then
-      local duration = endTime - startTime
-      local max = duration / 1000
-      local cur = GetTime() - startTime / 1000
+    if not name or not duration then return end
+    return name, texture, spellID, duration, isChannel, noInterrupt
+  end
 
-      cur = cur > max and max or cur
-      cur = cur < 0 and 0 or cur
+  -- Create the visual once, then only restamp it when the active cast changes.
+  table.insert(ShaguTweaks.libnameplate.OnUpdate, function()
+    if not this.castbar then create_castbar(this) end
 
-      this.castbar:Show()
-      this.castbar:SetMinMaxValues(0, duration / 1000)
-      this.castbar:SetValue(cur)
+    local unit = plateUnits[this]
+    if not unit or not UnitExists(unit) then
+      this.castbar:Hide()
+      this.castbar.castKey = nil
+      return
+    end
 
-      local percent = cur / max
-      local x = this.castbar:GetWidth()*percent
-      this.castbar.spark:SetPoint("CENTER", this.castbar, "LEFT", x, 0)
+    local cast, texture, spellID, duration, isChannel = GetCastInfo(unit)
+    if not cast then
+      this.castbar:Hide()
+      this.castbar.castKey = nil
+      return
+    end
 
+    local startMs = duration:GetStartTime() * 1000
+    local endMs = duration:GetEndTime() * 1000
+    local castKey = tostring(spellID or cast) .. ":" .. tostring(startMs) .. ":" .. tostring(endMs) .. ":" .. tostring(isChannel)
+
+    if this.castbar.castKey ~= castKey then
+      this.castbar.castKey = castKey
+      this.castbar:SetTimerDuration(duration, Enum.StatusBarInterpolation.Immediate,
+        isChannel and Enum.StatusBarTimerDirection.RemainingTime or Enum.StatusBarTimerDirection.ElapsedTime)
       this.castbar.text:SetText(cast)
 
       if texture then
@@ -109,10 +178,13 @@ module.enable = function(self)
       else
         this.castbar.texture.icon:Hide()
       end
-
-      this.castbar:SetAlpha(this:GetAlpha())
-    else
-      this.castbar:Hide()
     end
+
+    local percent = isChannel and duration:GetRemainingPercent() or duration:GetElapsedPercent()
+    local x = this.castbar:GetWidth() * percent
+    this.castbar.spark:ClearAllPoints()
+    this.castbar.spark:SetPoint("CENTER", this.castbar, "LEFT", x, 0)
+    this.castbar:SetAlpha(this:GetAlpha())
+    this.castbar:Show()
   end)
 end

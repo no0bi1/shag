@@ -4,269 +4,122 @@ local GetExpansion = ShaguTweaks.GetExpansion
 local libtipscan = ShaguTweaks.libtipscan
 local libspell = ShaguTweaks.libspell
 local hooksecurefunc = ShaguTweaks.hooksecurefunc
-local cmatch = ShaguTweaks.cmatch
 
 -- return instantly if we're not on a vanilla client
 if GetExpansion() ~= "vanilla" then return end
 
-local valid_units = {}
-valid_units["pet"] = true
-valid_units["player"] = true
-valid_units["target"] = true
-valid_units["mouseover"] = true
-
-valid_units["pettarget"] = true
-valid_units["playertarget"] = true
-valid_units["targettarget"] = true
-valid_units["mouseovertarget"] = true
-valid_units["targettargettarget"] = true
-
-for i=1,4 do valid_units["party" .. i] = true end
-for i=1,4 do valid_units["partypet" .. i] = true end
-for i=1,40 do valid_units["raid" .. i] = true end
-for i=1,40 do valid_units["raidpet" .. i] = true end
-
-for i=1,4 do valid_units["party" .. i .. "target"] = true end
-for i=1,4 do valid_units["partypet" .. i .. "target"] = true end
-for i=1,40 do valid_units["raid" .. i .. "target"] = true end
-for i=1,40 do valid_units["raidpet" .. i .. "target"] = true end
-
-local lastcasttex, lastrank, _
+local lastcasttex, lastrank
 local scanner = libtipscan:GetScanner("libcast")
-
-local libcast = CreateFrame("Frame", "ShaguTweaksEnemyCast")
 local player = UnitName("player")
 
-ShaguTweaks.UnitChannelInfo = _G.UnitChannelInfo or function(unit)
-  -- convert to name if unitstring was given
-  unit = valid_units[unit] and UnitName(unit) or unit
-
-  local cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill
-  local db = libcast.db[unit]
-
-  -- clean legacy values
-  if db and db.cast and db.start + db.casttime / 1000 > GetTime() then
-    if not db.channel then return end
-    cast = db.cast
-    nameSubtext = db.rank
-    text = ""
-    texture = db.icon
-    startTime = db.start * 1000
-    endTime = startTime + db.casttime
-    isTradeSkill = nil
-  elseif db then
-    -- remove cast action to the database
-    db.cast = nil
-    db.rank = nil
-    db.start = nil
-    db.casttime = nil
-    db.icon = nil
-    db.channel = nil
-  end
-
-  return cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill
-end
-
-ShaguTweaks.UnitCastingInfo = _G.UnitCastingInfo or function(unit)
-  -- convert to name if unitstring was given
-  unit = valid_units[unit] and UnitName(unit) or unit
-
-  local cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill
-  local db = libcast.db[unit]
-
-  -- clean legacy values
-  if db and db.cast and db.start + db.casttime / 1000 > GetTime() then
-    if db.channel then return end
-    cast = db.cast
-    nameSubtext = db.rank or ""
-    text = ""
-    texture = db.icon
-    startTime = db.start * 1000
-    endTime = startTime + db.casttime
-    isTradeSkill = nil
-  elseif db then
-    -- remove cast action to the database
-    db.cast = nil
-    db.rank = nil
-    db.start = nil
-    db.casttime = nil
-    db.icon = nil
-    db.channel = nil
-  end
-
-  return cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill
-end
-
-function libcast:AddAction(mob, spell, channel)
-  if not mob or not spell then return nil end
-
-  if L["spells"][spell] ~= nil then
-    local casttime = L["spells"][spell].t
-    local icon = L["spells"][spell].icon and string.format("%s%s", "Interface\\Icons\\", L["spells"][spell].icon) or nil
-
-    -- add cast action to the database
-    if not self.db[mob] then self.db[mob] = {} end
-    self.db[mob].cast = spell
-    self.db[mob].rank = nil
-    self.db[mob].start = GetTime()
-    self.db[mob].casttime = casttime
-    self.db[mob].icon = icon
-    self.db[mob].channel = channel
-
-    return true
-  end
-
-  return nil
-end
-
-function libcast:RemoveAction(mob, spell)
-  if self.db[mob] and ( L["interrupts"][spell] ~= nil or spell == "INTERRUPT" ) then
-
-    -- remove cast action to the database
-    self.db[mob].cast = nil
-    self.db[mob].rank = nil
-    self.db[mob].start = nil
-    self.db[mob].casttime = nil
-    self.db[mob].icon = nil
-    self.db[mob].channel = nil
-  end
-end
-
--- main data
+local libcast = CreateFrame("Frame", "ShaguTweaksEnemyCast")
 libcast.db = { [player] = {} }
 
--- environmental casts
-libcast:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
-libcast:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_BUFFS")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PARTY_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PARTY_BUFF")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_BUFFS")
-libcast:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
-libcast:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
+-- ClassicAPI nameplate tokens are the authoritative link between a visible
+-- Shagu nameplate frame and the unit being displayed by that frame.
+local plateUnits = {}
+local unitPlates = {}
 
--- player spells
-libcast:RegisterEvent("SPELLCAST_START")
-libcast:RegisterEvent("SPELLCAST_STOP")
-libcast:RegisterEvent("SPELLCAST_FAILED")
-libcast:RegisterEvent("SPELLCAST_INTERRUPTED")
-libcast:RegisterEvent("SPELLCAST_DELAYED")
-libcast:RegisterEvent("SPELLCAST_CHANNEL_START")
-libcast:RegisterEvent("SPELLCAST_CHANNEL_STOP")
-libcast:RegisterEvent("SPELLCAST_CHANNEL_UPDATE")
+local function BindNamePlate(unit)
+  if not unit or not C_NamePlate or not C_NamePlate.GetNamePlateForUnit then return end
+  local plate = C_NamePlate.GetNamePlateForUnit(unit)
+  if not plate then return end
 
+  local oldUnit = plateUnits[plate]
+  if oldUnit then unitPlates[oldUnit] = nil end
+
+  plateUnits[plate] = unit
+  unitPlates[unit] = plate
+end
+
+local function UnbindNamePlate(unit)
+  local plate = unitPlates[unit]
+  if plate then
+    plateUnits[plate] = nil
+    unitPlates[unit] = nil
+  end
+end
+
+-- Public resolver used by Shagu's nameplate castbar. The engine frame is
+-- the same frame returned by C_NamePlate.GetNamePlateForUnit().
+function libcast:GetUnitForNamePlate(plate)
+  return plateUnits[plate]
+end
+
+local function RefreshNamePlates()
+  plateUnits = {}
+  unitPlates = {}
+  if not C_NamePlate or not C_NamePlate.GetNamePlateForUnit then return end
+
+  -- Slots are sparse and stable while bound. Probe a bounded range so plates
+  -- already visible when this addon loads are also associated with tokens.
+  for i = 1, 100 do
+    BindNamePlate("nameplate" .. i)
+  end
+end
+
+libcast:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+libcast:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+libcast:RegisterEvent("PLAYER_ENTERING_WORLD")
 libcast:SetScript("OnEvent", function()
-  -- Fill database with player casts
-  if event == "SPELLCAST_START" then
-    local icon = L["spells"][arg1] and L["spells"][arg1].icon and string.format("%s%s", "Interface\\Icons\\", L["spells"][arg1].icon) or lastcasttex
-    -- add cast action to the database
-    this.db[player].cast = arg1
-    this.db[player].rank = lastrank
-    this.db[player].start = GetTime()
-    this.db[player].casttime = arg2
-    this.db[player].icon = icon
-    this.db[player].channel = nil
-    if not L["spells"][arg1] or not L["spells"][arg1].icon or not L["spells"][arg1].t then
-      L["spells"][arg1] = L["spells"][arg1] or { }
-      L["spells"][arg1].icon = L["spells"][arg1].icon or icon
-      L["spells"][arg1].t = L["spells"][arg1].t or arg2
-    end
-    lastcasttex, lastrank = nil, nil
-  elseif event == "SPELLCAST_STOP" or event == "SPELLCAST_FAILED" or event == "SPELLCAST_INTERRUPTED" then
-    if this.db[player] and not this.db[player].channel then
-      -- remove cast action to the database
-      this.db[player].cast = nil
-      this.db[player].rank = nil
-      this.db[player].rank = nil
-      this.db[player].start = nil
-      this.db[player].casttime = nil
-      this.db[player].icon = nil
-      this.db[player].channel = nil
-    else
-      lastcasttex, lastrank = nil, nil
-    end
-  elseif event == "SPELLCAST_DELAYED" then
-    if this.db[player].cast then
-      this.db[player].start = this.db[player].start + arg1/1000
-    end
-  elseif event == "SPELLCAST_CHANNEL_START" then
-    -- add cast action to the database
-    this.db[player].cast = arg2
-    this.db[player].rank = lastrank
-    this.db[player].start = GetTime()
-    this.db[player].casttime = arg1
-    this.db[player].icon = L["spells"][arg2] and L["spells"][arg2].icon and string.format("%s%s", "Interface\\Icons\\", L["spells"][arg2].icon) or lastcasttex
-    this.db[player].channel = true
-    lastcasttex, lastrank = nil, nil
-  elseif event == "SPELLCAST_CHANNEL_STOP" then
-    if this.db[player] and this.db[player].channel then
-      -- remove cast action to the database
-      this.db[player].cast = nil
-      this.db[player].rank = nil
-      this.db[player].start = nil
-      this.db[player].casttime = nil
-      this.db[player].icon = nil
-      this.db[player].channel = nil
-    end
-  elseif event == "SPELLCAST_CHANNEL_UPDATE" then
-    if this.db[player].cast then
-      this.db[player].start = -this.db[player].casttime/1000 + GetTime() + arg1/1000
-    end
-  -- Fill database with environmental casts
-  elseif arg1 then
-    local mob, spell, _
-
-    -- (.+) begins to cast (.+).
-    mob, spell = cmatch(arg1, SPELLCASTOTHERSTART)
-    if libcast:AddAction(mob, spell) then return end
-
-    -- (.+) begins to perform (.+).
-    mob, spell = cmatch(arg1, SPELLPERFORMOTHERSTART)
-    if libcast:AddAction(mob, spell) then return end
-
-    -- (.+) gains (.+).
-    mob, spell = cmatch(arg1, AURAADDEDOTHERHELPFUL)
-    if libcast:RemoveAction(mob, spell) then return end
-
-    -- (.+) is afflicted by (.+).
-    mob, spell = cmatch(arg1, AURAADDEDOTHERHARMFUL)
-    if libcast:RemoveAction(mob, spell) then return end
-
-    -- Your (.+) hits (.+) for (%d+).
-    spell, mob = cmatch(arg1, SPELLLOGSELFOTHER)
-    if libcast:RemoveAction(mob, spell) then return end
-
-    -- Your (.+) crits (.+) for (%d+).
-    spell, mob = cmatch(arg1, SPELLLOGCRITSELFOTHER)
-    if libcast:RemoveAction(mob, spell) then return end
-
-    -- (.+)'s (.+) %a hits (.+) for (%d+).
-    _, spell, mob = cmatch(arg1, SPELLLOGOTHEROTHER)
-    if libcast:RemoveAction(mob, spell) then return end
-
-    -- (.+)'s (.+) %a crits (.+) for (%d+).
-    _, spell, mob = cmatch(arg1, SPELLLOGCRITOTHEROTHER)
-    if libcast:RemoveAction(mob, spell) then return end
-
-    -- You interrupt (.+)'s (.+).
-    mob, spell = cmatch(arg1, SPELLINTERRUPTSELFOTHER)
-    if libcast:RemoveAction(mob, spell) then return end
-
-    -- (.+) interrupts (.+)'s (.+).
-    _, mob, spell = cmatch(arg1, SPELLINTERRUPTOTHEROTHER)
-    if libcast:RemoveAction(mob, spell) then return end
+  if event == "NAME_PLATE_UNIT_ADDED" then
+    BindNamePlate(arg1)
+  elseif event == "NAME_PLATE_UNIT_REMOVED" then
+    UnbindNamePlate(arg1)
+  elseif event == "PLAYER_ENTERING_WORLD" then
+    RefreshNamePlates()
   end
 end)
+
+local function ResolveUnit(unit)
+  if type(unit) == "table" then
+    return plateUnits[unit]
+  end
+  return unit
+end
+
+-- Preserve Shagu's established seven-value return shape while taking all
+-- cast data and timing directly from ClassicAPI, as pfUI does.
+ShaguTweaks.UnitCastingInfo = function(unit)
+  unit = ResolveUnit(unit)
+  if not unit then return end
+
+  local name, _, texture, startTime, endTime, isTradeSkill, _, _, spellID =
+    C_Spell.UnitCastingInfo(unit)
+
+  if name and startTime and endTime and UnitCastingDuration(unit) then
+    local rank = spellID and C_Spell.GetSpellSubtext(spellID) or ""
+    return name, rank, name, texture, startTime, endTime, isTradeSkill
+  end
+
+  -- Shagu's custom Aimed Shot / Multi-Shot bars are synthetic player casts;
+  -- retain them separately without using the old enemy-cast reconstruction.
+  if UnitIsUnit(unit, "player") then
+    local db = libcast.db[player]
+    if db and db.cast and db.start and db.casttime
+        and db.start + db.casttime / 1000 > GetTime() and not db.channel then
+      return db.cast, db.rank or "", "", db.icon,
+        db.start * 1000, db.start * 1000 + db.casttime, nil
+    end
+  end
+end
+
+ShaguTweaks.UnitChannelInfo = function(unit)
+  unit = ResolveUnit(unit)
+  if not unit then return end
+
+  local name, _, texture, startTime, endTime, isTradeSkill, _, spellID =
+    C_Spell.UnitChannelInfo(unit)
+
+  -- Match pfUI: do not show a timed bar when ClassicAPI cannot supply a
+  -- duration object (for example, a remote channel whose start was missed).
+  if not name or not startTime or not endTime or not UnitChannelDuration(unit) then
+    return
+  end
+
+  local rank = spellID and C_Spell.GetSpellSubtext(spellID) or ""
+  return name, rank, name, texture, startTime, endTime, isTradeSkill
+end
 
 --[[ Custom Casts
   Enable Castbars for spells that don't have a castbar by default
@@ -360,7 +213,7 @@ end
 
 local function CastCustom(spell)
   if not spell then return end
-  if not ShaguTweaks.UnitCastingInfo(UnitName("player")) then
+  if not ShaguTweaks.UnitCastingInfo("player") then
     for custom, func in pairs(libcast.customcast) do
       if strfind(strlower(spell), custom) or strlower(spell) == custom then
         func(true)

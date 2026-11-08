@@ -1,7 +1,4 @@
-local _G = ShaguTweaks.GetGlobalEnv()
 local T = ShaguTweaks.T
-local UnitCastingInfo = ShaguTweaks.UnitCastingInfo
-local UnitChannelInfo = ShaguTweaks.UnitChannelInfo
 
 local module = ShaguTweaks:register({
   title = T["Nameplate Castbar"],
@@ -125,15 +122,14 @@ module.enable = function(self)
   -- Read cast data directly from ClassicAPI. The timestamps are milliseconds;
   -- duration objects keep the bar synchronized without manual time arithmetic.
   local function GetCastInfo(unit)
-    local name, _, texture, startMs, endMs, _, _, noInterrupt, spellID =
+    local name, _, texture, _, _, _, _, _, spellID =
       C_Spell.UnitCastingInfo(unit)
     local duration, isChannel
 
     if name then
       duration = UnitCastingDuration(unit)
     else
-      name, _, texture, startMs, endMs, _, noInterrupt, spellID =
-        C_Spell.UnitChannelInfo(unit)
+      name, _, texture, _, _, _, _, spellID = C_Spell.UnitChannelInfo(unit)
       if name then
         duration = UnitChannelDuration(unit)
         isChannel = true

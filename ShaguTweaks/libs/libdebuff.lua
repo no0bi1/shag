@@ -272,14 +272,26 @@ end
 function libdebuff:UnitDebuff(unit, id)
   -- ClassicAPI returns consecutive active debuffs, including debuffs that
   -- occupy overflow buff slots on servers such as Turtle.
+  local auraData
+  local auraEffect, auraRank, auraTexture, auraStacks, auraType
+  local auraDuration, auraTimeleft, auraCaster
   if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-    local aura = C_UnitAuras.GetAuraDataByIndex(unit, id, "HARMFUL")
-    if aura then
-      return AuraToLegacy(aura)
+    auraData = C_UnitAuras.GetAuraDataByIndex(unit, id, "HARMFUL")
+    if auraData then
+      auraEffect, auraRank, auraTexture, auraStacks, auraType,
+        auraDuration, auraTimeleft, auraCaster = AuraToLegacy(auraData)
+
+      -- Prefer ClassicAPI's observed cast timing when it is available.
+      if auraDuration and auraDuration > 0 and auraTimeleft and auraTimeleft >= 0 then
+        return auraEffect, auraRank, auraTexture, auraStacks, auraType,
+          auraDuration, auraTimeleft, auraCaster
+      end
     end
   end
 
   -- Vanilla fallback: reconstruct the timer from combat-log/cast bookkeeping.
+  -- This remains useful when ClassicAPI has the aura but has not observed its
+  -- application, and therefore cannot yet provide an expiration time.
   local unitname = UnitName(unit)
   local unitlevel = UnitLevel(unit)
   local texture, stacks, dtype = UnitDebuff(unit, id)
@@ -314,6 +326,17 @@ function libdebuff:UnitDebuff(unit, id)
         timeleft = duration + object.start - GetTime()
       end
     end
+  end
+
+  if auraData then
+    -- Keep the live ClassicAPI aura metadata, but use Shagu's reconstructed
+    -- timer when ClassicAPI has no observed expiration for this application.
+    if duration and duration > 0 then
+      return auraEffect, auraRank, auraTexture, auraStacks, auraType,
+        duration, timeleft, auraCaster
+    end
+    return auraEffect, auraRank, auraTexture, auraStacks, auraType,
+      auraDuration, auraTimeleft, auraCaster
   end
 
   return effect, rank, texture, stacks, dtype, duration, timeleft

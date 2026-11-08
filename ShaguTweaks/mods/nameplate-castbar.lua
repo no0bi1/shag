@@ -5,7 +5,7 @@ local UnitChannelInfo = ShaguTweaks.UnitChannelInfo
 
 local module = ShaguTweaks:register({
   title = T["Nameplate Castbar"],
-  description = T["Adds a castbar to the nameplate based on combat log estimations."],
+  description = T["Adds a castbar to the nameplate using ClassicAPI cast data."],
   expansions = { ["vanilla"] = true, ["tbc"] = false },
   category = T["Nameplates"],
   enabled = true,
@@ -77,8 +77,8 @@ module.enable = function(self)
     -- create castbar if not existing
     if not this.castbar then create_castbar(this) end
 
-    local name = this.name:GetText()
-    local cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitCastingInfo(name)
+    local unit = ShaguTweaks.libcast:GetUnitForNamePlate(this)
+    local cast, nameSubtext, text, texture, startTime, endTime, isTradeSkill = UnitCastingInfo(unit)
 
     -- read enemy casts from SuperWoW if enabled
     if ShaguTweaks.superwow_active then

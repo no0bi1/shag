@@ -15,85 +15,22 @@ local player = UnitName("player")
 local libcast = CreateFrame("Frame", "ShaguTweaksEnemyCast")
 libcast.db = { [player] = {} }
 
--- ClassicAPI nameplate tokens are the authoritative link between a visible
--- Shagu nameplate frame and the unit being displayed by that frame.
-local plateUnits = {}
-local unitPlates = {}
-
-local function BindNamePlate(unit)
-  if not unit or not C_NamePlate or not C_NamePlate.GetNamePlateForUnit then return end
-  local plate = C_NamePlate.GetNamePlateForUnit(unit)
-  if not plate then return end
-
-  local oldUnit = plateUnits[plate]
-  if oldUnit then unitPlates[oldUnit] = nil end
-
-  plateUnits[plate] = unit
-  unitPlates[unit] = plate
-end
-
-local function UnbindNamePlate(unit)
-  local plate = unitPlates[unit]
-  if plate then
-    plateUnits[plate] = nil
-    unitPlates[unit] = nil
-  end
-end
-
--- Public resolver used by Shagu's nameplate castbar. The engine frame is
--- the same frame returned by C_NamePlate.GetNamePlateForUnit().
-function libcast:GetUnitForNamePlate(plate)
-  return plateUnits[plate]
-end
-
-local function RefreshNamePlates()
-  plateUnits = {}
-  unitPlates = {}
-  if not C_NamePlate or not C_NamePlate.GetNamePlateForUnit then return end
-
-  -- Slots are sparse and stable while bound. Probe a bounded range so plates
-  -- already visible when this addon loads are also associated with tokens.
-  for i = 1, 100 do
-    BindNamePlate("nameplate" .. i)
-  end
-end
-
-libcast:RegisterEvent("NAME_PLATE_UNIT_ADDED")
-libcast:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
-libcast:RegisterEvent("PLAYER_ENTERING_WORLD")
-libcast:SetScript("OnEvent", function()
-  if event == "NAME_PLATE_UNIT_ADDED" then
-    BindNamePlate(arg1)
-  elseif event == "NAME_PLATE_UNIT_REMOVED" then
-    UnbindNamePlate(arg1)
-  elseif event == "PLAYER_ENTERING_WORLD" then
-    RefreshNamePlates()
-  end
-end)
-
-local function ResolveUnit(unit)
-  if type(unit) == "table" then
-    return plateUnits[unit]
-  end
-  return unit
-end
-
--- Preserve Shagu's established seven-value return shape while taking all
--- cast data and timing directly from ClassicAPI, as pfUI does.
+-- ClassicAPI is the authoritative source for unit cast and channel data.
+-- Keep Shagu's seven-value interface for the existing castbar consumers:
+-- name, rank, text, texture, startTimeMs, endTimeMs, isTradeSkill.
 ShaguTweaks.UnitCastingInfo = function(unit)
-  unit = ResolveUnit(unit)
-  if not unit then return end
+  if not unit or not UnitExists(unit) then return end
 
   local name, _, texture, startTime, endTime, isTradeSkill, _, _, spellID =
     C_Spell.UnitCastingInfo(unit)
 
-  if name and startTime and endTime and UnitCastingDuration(unit) then
+  if name and startTime and endTime then
     local rank = spellID and C_Spell.GetSpellSubtext(spellID) or ""
     return name, rank, name, texture, startTime, endTime, isTradeSkill
   end
 
-  -- Shagu's custom Aimed Shot / Multi-Shot bars are synthetic player casts;
-  -- retain them separately without using the old enemy-cast reconstruction.
+  -- Shagu's custom Aimed Shot / Multi-Shot bars are synthetic player casts.
+  -- Keep these separate because ClassicAPI reports the engine's actual casts.
   if UnitIsUnit(unit, "player") then
     local db = libcast.db[player]
     if db and db.cast and db.start and db.casttime
@@ -105,17 +42,14 @@ ShaguTweaks.UnitCastingInfo = function(unit)
 end
 
 ShaguTweaks.UnitChannelInfo = function(unit)
-  unit = ResolveUnit(unit)
-  if not unit then return end
+  if not unit or not UnitExists(unit) then return end
 
   local name, _, texture, startTime, endTime, isTradeSkill, _, spellID =
     C_Spell.UnitChannelInfo(unit)
 
-  -- Match pfUI: do not show a timed bar when ClassicAPI cannot supply a
-  -- duration object (for example, a remote channel whose start was missed).
-  if not name or not startTime or not endTime or not UnitChannelDuration(unit) then
-    return
-  end
+  -- Remote channels whose start was not observed can have no timing data.
+  -- The existing Shagu castbar needs both timestamps to calculate progress.
+  if not name or not startTime or not endTime then return end
 
   local rank = spellID and C_Spell.GetSpellSubtext(spellID) or ""
   return name, rank, name, texture, startTime, endTime, isTradeSkill

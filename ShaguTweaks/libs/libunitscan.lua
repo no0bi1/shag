@@ -1,32 +1,29 @@
-local _G = ShaguTweaks.GetGlobalEnv()
-local L = ShaguTweaks.L
-
--- Player data is keyed by name for modules that only have chat links or
--- other name-only references. Unit-based lookups use the unit itself.
+-- Player levels are keyed by name for modules that only have name references.
+-- Player class identity is owned by ClassicAPI's C_PlayerCache.
 local units = { players = {} }
 
 local libunitscan = CreateFrame("Frame", "ShaguTweaksUnitScan", UIParent)
 
 function ShaguTweaks.GetUnitData(name, active)
-  local player = name and units.players[name]
-  if not player then return end
+  if not name then return end
 
-  local class = player.class
-  if not class and C_PlayerCache and C_PlayerCache.GetPlayerInfoByName then
-    local _
+  local player = units.players[name]
+  local class
+  if C_PlayerCache and C_PlayerCache.GetPlayerInfoByName then
     _, class = C_PlayerCache.GetPlayerInfoByName(name)
   end
 
-  return class, player.level, player.elite, true
+  -- Keep the legacy return shape used by ShaguTweaks modules:
+  -- class, level, elite, confirmed-player.
+  return class, player and player.level, player and player.elite, player and true or nil
 end
 
-local function AddPlayerData(name, class, level)
+local function AddPlayerData(name, level)
   if not name then return end
 
   units.players[name] = units.players[name] or {}
   local player = units.players[name]
 
-  if class then player.class = class end
   if level and level > 0 then player.level = level end
 end
 
@@ -39,21 +36,14 @@ local function RememberUnit(unit)
   local guid = UnitGUID(unit)
   if not name then return end
 
-  local class = UnitClassBase and UnitClassBase(unit)
-  if not class then
-    local _
-    _, class = UnitClass(unit)
-    class = L["class"][class] or class
-  end
-
+  local class = UnitClassBase(unit)
   local level = UnitLevel(unit)
-  AddPlayerData(name, class, level)
+  AddPlayerData(name, level)
 
   if guid and C_PlayerCache and C_PlayerCache.RememberPlayer then
     local _, race = UnitRace(unit)
     local sex = UnitSex(unit)
-    sex = sex and (sex - 2) or nil
-    C_PlayerCache.RememberPlayer(guid, name, class, race, sex)
+    C_PlayerCache.RememberPlayer(guid, name, class, race, sex and (sex - 2) or nil)
   end
 end
 
@@ -85,16 +75,14 @@ libunitscan:SetScript("OnEvent", function()
 
   elseif event == "FRIENDLIST_UPDATE" then
     for i = 1, GetNumFriends() do
-      local name, level, class = GetFriendInfo(i)
-      class = L["class"][class] or nil
-      AddPlayerData(name, class, level)
+      local info = C_FriendList.GetFriendInfoByIndex(i)
+      if info then AddPlayerData(info.name, info.level) end
     end
 
   elseif event == "GUILD_ROSTER_UPDATE" then
     for i = 1, GetNumGuildMembers() do
-      local name, _, _, level, class = GetGuildRosterInfo(i)
-      class = L["class"][class] or nil
-      AddPlayerData(name, class, level)
+      local name, _, _, level = GetGuildRosterInfo(i)
+      AddPlayerData(name, level)
     end
 
   elseif event == "RAID_ROSTER_UPDATE" then

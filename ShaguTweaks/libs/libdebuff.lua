@@ -257,7 +257,7 @@ local function AuraToLegacy(aura)
   if aura.spellId and C_Spell and C_Spell.GetSpellSubtext then
     local subtext = C_Spell.GetSpellSubtext(aura.spellId)
     if subtext and subtext ~= "" then
-      rank = tonumber(string.match(subtext, "(%\d+)$"))
+      rank = tonumber(string.match(subtext, "(%d+)$"))
     end
   end
 

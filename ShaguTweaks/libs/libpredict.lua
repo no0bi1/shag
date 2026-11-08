@@ -19,10 +19,9 @@ ShaguTweaks_cache = ShaguTweaks_cache or {}
 -- ends with the cast, to a resurrection that landed and waits for the target
 -- to accept it.
 --
--- The library is able to receive and send compatible messages to HealComm,
--- and announces the player's resurrections to HealComm and CTRA. It has an
--- option to disable the sending of those messages in case HealComm is
--- already active.
+-- The library receives and sends HealComm-compatible predictions and
+-- announces the player's resurrections to HealComm and CTRA. Sending can be
+-- disabled when another addon already broadcasts the player's casts.
 --
 -- Casts are read from ClassicAPI's UNIT_SPELLCAST_* events and heal amounts
 -- from COMBAT_LOG_EVENT_UNFILTERED. GetHotDuration() reads live HoT timers
@@ -75,8 +74,8 @@ libpredict:SetScript("OnEvent", function()
     return
   end
   
-  if event == "CHAT_MSG_ADDON" and (arg1 == "HealComm" or arg1 == "CTRA") then
-    this:ParseChatMessage(arg4, arg2, arg1)
+  if event == "CHAT_MSG_ADDON" and arg1 == "HealComm" then
+    this:ParseChatMessage(arg4, arg2)
   end
 end)
 
@@ -351,9 +350,7 @@ end
 function libpredict:ParseComm(sender, msg)
   local msgtype, target, heal, time, rank
 
-  if msg == "Resurrection/stop/" then
-    msgtype = "RessStop"
-  elseif msg == "HealStop" or msg == "Healstop" or msg == "GrpHealstop" then
+  if msg == "HealStop" or msg == "Healstop" or msg == "GrpHealstop" then
     msgtype = "Stop"
     -- DEBUG: Log when HealStop received
     if libpredict.debug then
@@ -368,9 +365,6 @@ function libpredict:ParseComm(sender, msg)
         msgtype, time = "Delay", msgobj[2]
       end
 
-      if msgobj[1] == "Resurrection" and msgobj[2] then
-        msgtype, target = "Ress", msgobj[2]
-      end
       if msgobj[1] == "Heal" and msgobj[2] then
         msgtype, target, heal, time = "Heal", msgobj[2], msgobj[3], msgobj[4]
       end
@@ -442,26 +436,10 @@ end
 local recentHots = {}
 local DUPLICATE_WINDOW = 0.5  -- Ignoriere gleiche Nachricht innerhalb 0.5s
 
-function libpredict:ParseChatMessage(sender, msg, comm)
-  local msgtype, target, heal, time, rank
-  if comm == "CTRA" then
-    local _, _, cmd, ctratarget = string.find(msg, "(%a+)%s?([^#]*)")
-    if cmd == "RES" and ctratarget and ctratarget ~= "" and ctratarget ~= UNKNOWN then
-      msgtype, target = "Ress", ctratarget
-    elseif cmd == "RESNO" then
-      msgtype = "RessStop"
-    end
-  else
-    msgtype, target, heal, time, rank = libpredict:ParseComm(sender, msg)
-  end
+function libpredict:ParseChatMessage(sender, msg)
+  local msgtype, target, heal, time, rank = libpredict:ParseComm(sender, msg)
 
-  if msgtype == "RessStop" and sender then
-    libpredict:RessStop(sender)
-    return
-  elseif msgtype == "Ress" and target then
-    libpredict:Ress(sender, target)
-    return
-  elseif msgtype == "Stop" and sender then
+  if msgtype == "Stop" and sender then
     libpredict:HealStop(sender)
     return
   elseif msgtype == "Delay" and time then
@@ -635,11 +613,6 @@ end
 function libpredict:UnitHasResurrection(unit)
   if not unit then return nil end
   return UnitHasIncomingResurrection(unit) or resOffers[UnitGUID(unit)] ~= nil
-end
-
--- Preserve Shagu's existing method name and include landed resurrection offers.
-function libpredict:UnitHasIncomingResurrection(unit)
-  return self:UnitHasResurrection(unit)
 end
 
 local realm = GetRealmName()
@@ -996,7 +969,7 @@ local function OnHeal()
   local spellId, spellName, amount, isCrit = arg12, arg13, arg15, arg18 == 1
   if not spellName or not amount or amount <= 0 then return end
 
-  if arg4 == UnitGUID("player") then
+  if IsPlayerGuid(arg4) then
     if spell_queue[1] == spellName then
       UpdateCache(spell_queue[2], amount, isCrit)
     end

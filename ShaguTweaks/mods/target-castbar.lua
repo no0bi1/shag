@@ -60,6 +60,7 @@ castbar.text:SetFont(font, size - 2, "THINOUTLINE")
 module.enable = function(self)
   local duration = C_DurationUtil.CreateDuration()
   local expiry
+  local isChannel
 
   local function HideCastbar()
     if expiry then
@@ -100,7 +101,7 @@ module.enable = function(self)
 
     local name, _, texture, startMs, endMs, _, _, noInterrupt, spellID =
       C_Spell.UnitCastingInfo(unit)
-    local isChannel
+    isChannel = nil
 
     if not name then
       name, _, texture, startMs, endMs, _, noInterrupt, spellID =
@@ -171,7 +172,13 @@ module.enable = function(self)
   local oldUpdate = TargetFrame:GetScript("OnUpdate")
   TargetFrame:SetScript("OnUpdate", function(arg)
     if oldUpdate then oldUpdate(arg) end
-    if castbar:IsShown() then UpdatePosition() end
+    if castbar:IsShown() then
+      UpdatePosition()
+      local percent = isChannel and duration:GetRemainingPercent() or duration:GetElapsedPercent()
+      local x = castbar:GetWidth() * percent
+      castbar.spark:ClearAllPoints()
+      castbar.spark:SetPoint("CENTER", castbar, "LEFT", x, 0)
+    end
   end)
 
   RefreshCastbar()

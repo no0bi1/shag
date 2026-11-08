@@ -1,8 +1,4 @@
-local _G = ShaguTweaks.GetGlobalEnv()
 local T = ShaguTweaks.T
-local GetExpansion = ShaguTweaks.GetExpansion
-local UnitCastingInfo = ShaguTweaks.UnitCastingInfo
-local UnitChannelInfo = ShaguTweaks.UnitChannelInfo
 
 local module = ShaguTweaks:register({
   title = T["Enemy Castbars"],

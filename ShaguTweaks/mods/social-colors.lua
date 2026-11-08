@@ -2,7 +2,6 @@ local _G = ShaguTweaks.GetGlobalEnv()
 local T = ShaguTweaks.T
 local L = ShaguTweaks.L
 local gfind = string.gmatch or string.gfind
-local GetUnitData = ShaguTweaks.GetUnitData
 local hooksecurefunc = ShaguTweaks.hooksecurefunc
 local GetExpansion = ShaguTweaks.GetExpansion
 local cmatch = ShaguTweaks.cmatch
@@ -10,54 +9,30 @@ local rgbhex = ShaguTweaks.rgbhex
 local strsplit = ShaguTweaks.strsplit
 local friendinfo = gsub(gsub(FRIENDS_LEVEL_TEMPLATE,"%%s","%%s %%s"),"%%d","%%s")
 
--- Unknown-sender messages are kept only in memory while UnitScan resolves class.
-local pendingSocialMessages = {}
-local SOCIAL_MESSAGE_TIMEOUT = 9
+-- Use the sender GUID supplied with the current chat event. Other player
+-- hyperlinks are resolved through ClassicAPI's persistent name cache.
+local function ColorChatText(text, sender, senderClass)
+  if not text then return text end
 
-local function ColorChatText(text, requestLookup)
-  local unresolvedName
-  text = string.gsub(text, "(|Hplayer:([^|]+)|h)(.-)(|h)", function(link, name, display, close)
+  return string.gsub(text, "(|Hplayer:([^|]*)|h%[([^%]]*)%]|h)", function(link, name, shown)
     local real = strsplit(":", name)
-    local color = "|cffaaaaaa"
-    local class = GetUnitData(real, requestLookup)
+    if shown ~= real then return link end
 
-    if class and class ~= UNKNOWN and RAID_CLASS_COLORS[class] then
-      color = rgbhex(RAID_CLASS_COLORS[class])
-    elseif not unresolvedName then
-      unresolvedName = real
+    local class
+    if senderClass and real == sender then
+      class = senderClass
+    elseif C_PlayerCache and C_PlayerCache.GetPlayerInfoByName then
+      local _
+      _, class = C_PlayerCache.GetPlayerInfoByName(real)
     end
 
-    return link .. color .. display .. "|r" .. close
+    if class and RAID_CLASS_COLORS[class] then
+      local color = rgbhex(RAID_CLASS_COLORS[class])
+      return "|Hplayer:" .. name .. "|h" .. color .. "[" .. real .. "]|h|r"
+    end
+
+    return link
   end)
-  return text, unresolvedName
-end
-
-local function FlushSocialMessages(name, class)
-  local messages = pendingSocialMessages[name]
-  if not messages then return end
-  pendingSocialMessages[name] = nil
-
-  for _, message in ipairs(messages) do
-    -- A coloring/replay error must not prevent later buffered messages from
-    -- being released. If recoloring fails, replay the original text instead.
-    local ok = pcall(function()
-      local text = ColorChatText(message.text, false)
-      message.original(message.frame, text, message.a1, message.a2, message.a3, message.a4, message.a5)
-    end)
-
-    if not ok then
-      pcall(message.original, message.frame, message.text,
-        message.a1, message.a2, message.a3, message.a4, message.a5)
-    end
-  end
-end
-
-function ShaguTweaks.ResolveSocialColorMessages(name, class)
-  if name and class and RAID_CLASS_COLORS[class] then
-    FlushSocialMessages(name, class)
-  elseif name then
-    FlushSocialMessages(name, nil)
-  end
 end
 
 local module = ShaguTweaks:register({
@@ -84,23 +59,12 @@ module.enable = function(self)
         _G["ChatFrame"..i].HookAddMessageColor = _G["ChatFrame"..i].AddMessage
         _G["ChatFrame"..i].AddMessage = function(frame, text, a1, a2, a3, a4, a5)
           if text then
-            local coloredText, unresolvedName = ColorChatText(text, true)
-            if unresolvedName then
-              local messages = pendingSocialMessages[unresolvedName]
-              if not messages then
-                messages = {}
-                pendingSocialMessages[unresolvedName] = messages
-              end
-              table.insert(messages, {
-                frame = frame,
-                original = frame.HookAddMessageColor,
-                text = text,
-                a1 = a1, a2 = a2, a3 = a3, a4 = a4, a5 = a5,
-                queuedAt = GetTime(),
-              })
-              return
+            local _, _, sender, _, _, _, _, _, _, _, _, _, guid = GetCurrentChatEvent()
+            local senderClass
+            if guid and guid ~= "" then
+              _, senderClass = GetPlayerInfoByGUID(guid)
             end
-            text = coloredText
+            text = ColorChatText(text, sender, senderClass)
           end
 
           frame.HookAddMessageColor(frame, text, a1, a2, a3, a4, a5)
@@ -120,16 +84,6 @@ module.enable = function(self)
     name = cmatch(arg1, _G.ERR_FRIEND_OFFLINE_S)
     if name and playerdb[name] and playerdb[name].cname then
       playerdb[name].lastseen = date("%a %d-%b-%Y")
-    end
-  end)
-
-  -- Release held messages even if WHO cannot run (for example, while WhoFrame is open).
-  socialmod:SetScript("OnUpdate", function()
-    local now = GetTime()
-    for name, messages in pairs(pendingSocialMessages) do
-      if messages[1] and now - messages[1].queuedAt >= SOCIAL_MESSAGE_TIMEOUT then
-        FlushSocialMessages(name, nil)
-      end
     end
   end)
 

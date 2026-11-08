@@ -15,7 +15,12 @@ module.enable = function(self)
 
   table.insert(ShaguTweaks.libnameplate.OnUpdate, function()
     local name = this.name:GetText()
-    local class, _, elite, player = GetUnitData(name, true)
+
+    -- Nameplates do not expose a reliable unit token or player flag here.
+    -- Read cached data only: asking UnitScan to actively resolve every
+    -- nameplate name causes NPCs (for example, beasts) to enter the WHO queue.
+    -- Player lookups from chat/social-color sources remain active as before.
+    local class, _, elite, player = GetUnitData(name, false)
     if class and player then
       local color = RAID_CLASS_COLORS[class] or { r = .5, g = .5, b = .5, a = 1 }
       this.healthbar:SetStatusBarColor(color.r, color.g, color.b, 1)

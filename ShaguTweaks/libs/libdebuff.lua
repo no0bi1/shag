@@ -240,12 +240,51 @@ hooksecurefunc("UseAction", function(slot, target, button)
   libdebuff:AddPending(UnitName("target"), UnitLevel("target"), effect, duration)
 end)
 
+-- Convert ClassicAPI AuraData into libdebuff's established return tuple.
+-- Keep the old tooltip/timer reconstruction below as a fallback for clients
+-- without ClassicAPI or auras whose cast timing is not available.
+local function AuraToLegacy(aura)
+  if not aura then return nil end
+
+  local duration = aura.duration or 0
+  local timeleft = -1
+  if duration > 0 and aura.expirationTime and aura.expirationTime > 0 then
+    timeleft = aura.expirationTime - GetTime()
+    if timeleft < 0 then timeleft = 0 end
+  end
+
+  local rank
+  if aura.spellId and C_Spell and C_Spell.GetSpellSubtext then
+    local subtext = C_Spell.GetSpellSubtext(aura.spellId)
+    if subtext and subtext ~= "" then
+      rank = tonumber(string.match(subtext, "(%\d+)$"))
+    end
+  end
+
+  local dtype = aura.dispelName
+  if dtype == "" then dtype = nil end
+
+  local caster = aura.sourceUnit or (aura.isFromPlayerOrPlayerPet and "player" or "other")
+
+  return aura.name, rank, aura.icon, aura.applications or 0, dtype, duration, timeleft, caster
+end
+
 function libdebuff:UnitDebuff(unit, id)
+  -- ClassicAPI returns consecutive active debuffs, including debuffs that
+  -- occupy overflow buff slots on servers such as Turtle.
+  if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+    local aura = C_UnitAuras.GetAuraDataByIndex(unit, id, "HARMFUL")
+    if aura then
+      return AuraToLegacy(aura)
+    end
+  end
+
+  -- Vanilla fallback: reconstruct the timer from combat-log/cast bookkeeping.
   local unitname = UnitName(unit)
   local unitlevel = UnitLevel(unit)
   local texture, stacks, dtype = UnitDebuff(unit, id)
   local duration, timeleft = nil, -1
-  local rank = nil -- no backport
+  local rank = nil
   local effect
 
   if texture then
@@ -254,22 +293,26 @@ function libdebuff:UnitDebuff(unit, id)
   end
 
   if libdebuff.objects[unitname] and libdebuff.objects[unitname][unitlevel] and libdebuff.objects[unitname][unitlevel][effect] then
-    -- clean up cache
-    if libdebuff.objects[unitname][unitlevel][effect].duration and libdebuff.objects[unitname][unitlevel][effect].duration + libdebuff.objects[unitname][unitlevel][effect].start < GetTime() then
+    local object = libdebuff.objects[unitname][unitlevel][effect]
+    if object.duration and object.start and object.duration + object.start < GetTime() then
       libdebuff.objects[unitname][unitlevel][effect] = nil
     else
-      duration = libdebuff.objects[unitname][unitlevel][effect].duration
-      timeleft = duration + libdebuff.objects[unitname][unitlevel][effect].start - GetTime()
+      duration = object.duration
+      if duration and object.start then
+        timeleft = duration + object.start - GetTime()
+      end
     end
 
   -- no level data
   elseif libdebuff.objects[unitname] and libdebuff.objects[unitname][0] and libdebuff.objects[unitname][0][effect] then
-    -- clean up cache
-    if libdebuff.objects[unitname][0][effect].duration and libdebuff.objects[unitname][0][effect].duration + libdebuff.objects[unitname][0][effect].start < GetTime() then
+    local object = libdebuff.objects[unitname][0][effect]
+    if object.duration and object.start and object.duration + object.start < GetTime() then
       libdebuff.objects[unitname][0][effect] = nil
     else
-      duration = libdebuff.objects[unitname][0][effect].duration
-      timeleft = duration + libdebuff.objects[unitname][0][effect].start - GetTime()
+      duration = object.duration
+      if duration and object.start then
+        timeleft = duration + object.start - GetTime()
+      end
     end
   end
 

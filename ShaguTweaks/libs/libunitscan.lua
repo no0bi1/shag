@@ -49,7 +49,7 @@ end
 
 local function AddRosterLevel(name, level)
   if name and level and level > 0 then
-    AddPlayerData(name, nil, level)
+    AddPlayerData(name, level)
   end
 end
 
@@ -70,7 +70,7 @@ libunitscan:SetScript("OnEvent", function()
     ShaguTweaks_cache["players"] = ShaguTweaks_cache["players"] or {}
     units.players = ShaguTweaks_cache["players"]
 
-    AddPlayerData(UnitName("player"), nil, UnitLevel("player"))
+    AddPlayerData(UnitName("player"), UnitLevel("player"))
     RememberUnit("player")
 
   elseif event == "FRIENDLIST_UPDATE" then

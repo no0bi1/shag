@@ -22,10 +22,6 @@ for _, name in pairs(tocs) do
 end
 
 module.enable = function(self)
-  -- move the entire player frame down 4 pixels
-  PlayerFrame:ClearAllPoints()
-  PlayerFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, -8)
-
   PlayerFrameTexture:SetTexture(addonpath .. "\\img\\UI-TargetingFrame")
   PlayerFrameHealthBar:SetPoint("TOPLEFT", 106, -22)
   PlayerFrameHealthBar:SetHeight(30)
@@ -77,7 +73,7 @@ module.enable = function(self)
   wait:SetScript("OnUpdate", function()
     -- move text strings a bit higher
     if PlayerFrameHealthBar.TextString then
-      PlayerFrameHealthBar.TextString:SetPoint("TOP", PlayerFrameHealthBar, "BOTTOM", 0, 23)
+      PlayerFrameHealthBar.TextString:SetPoint("TOP", PlayerFrameHealthBar, "BOTTOM", 0, 19)
     end
 
     if TargetFrameHealthBar.TextString then

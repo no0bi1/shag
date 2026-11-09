@@ -40,6 +40,7 @@ local healGuidToName = {} -- [casterGuid] = casterName, for interrupted-cast cle
 local sentTargets = {}    -- [castGUID] = target name of an own cast, from UNIT_SPELLCAST_SENT
 local resOffers = {}      -- [guid] = expiry of a landed resurrection the target has yet to accept
 local RES_OFFER_TIMEOUT = 60 -- the target's resurrect popup declines itself after 60s
+local libpredict -- forward declaration for callbacks defined before frame creation
 
 -- Tell the listeners of "libpredict:heals" that the heals on `target` (a
 -- name) changed, and again at `expiry`, when a heal that is never stopped
@@ -61,7 +62,7 @@ local REJUVENATION      = C_Spell.GetSpellName(774)   -- Rejuvenation (Rank 1)
 local RENEW             = C_Spell.GetSpellName(139)   -- Renew (Rank 1)
 local REGROWTH          = C_Spell.GetSpellName(8936)  -- Regrowth (Rank 1)
 
-local libpredict = CreateFrame("Frame")
+libpredict = CreateFrame("Frame")
 libpredict:RegisterEvent("CHAT_MSG_ADDON")
 libpredict:RegisterEvent("PLAYER_TARGET_CHANGED")
 libpredict:RegisterEvent("PLAYER_LOGOUT")

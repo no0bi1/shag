@@ -283,8 +283,6 @@ local function UpdateTooltip()
   ------------------------------------------------
 
   if UnitIsPlayer(unit) then
-    GameTooltip:ClearLines()
-
     if name then
       local pvpname = UnitPVPName(unit)
       local title = ""
@@ -314,9 +312,17 @@ local function UpdateTooltip()
         display_name = "|cffffffff" .. title .. " |r" .. display_name
       end
 
-      GameTooltip:SetText(display_name, 1, 1, 1)
+      -- Blizzard's party tooltip contains the member's location. Keep
+      -- its original lines intact; only replace the name line so the
+      -- class coloring remains consistent with other player tooltips.
+      if string.find(unit, "^party%d+$") then
+        GameTooltipTextLeft1:SetText(display_name)
+      else
+        GameTooltip:ClearLines()
+        GameTooltip:SetText(display_name, 1, 1, 1)
+        AddRaceClassLine(unit)
+      end
 
-      AddRaceClassLine(unit)
       AddTargetLine(unit)
     end
 

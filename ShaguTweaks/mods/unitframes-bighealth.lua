@@ -73,7 +73,7 @@ module.enable = function(self)
   wait:SetScript("OnUpdate", function()
     -- move text strings a bit higher
     if PlayerFrameHealthBar.TextString then
-      PlayerFrameHealthBar.TextString:SetPoint("TOP", PlayerFrameHealthBar, "BOTTOM", 0, 19)
+      PlayerFrameHealthBar.TextString:SetPoint("TOP", PlayerFrameHealthBar, "BOTTOM", 0, 16)
     end
 
     if TargetFrameHealthBar.TextString then

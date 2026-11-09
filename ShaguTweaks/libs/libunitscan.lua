@@ -36,14 +36,15 @@ local function RememberUnit(unit)
   local guid = UnitGUID(unit)
   if not name then return end
 
-  local class = UnitClassBase(unit)
+  local _, class = UnitClass(unit)
   local level = UnitLevel(unit)
   AddPlayerData(name, level)
 
-  if guid and C_PlayerCache and C_PlayerCache.RememberPlayer then
-    local _, race = UnitRace(unit)
-    local sex = UnitSex(unit)
-    C_PlayerCache.RememberPlayer(guid, name, class, race, sex and (sex - 2) or nil)
+  -- UnitClass's second return is the English class token expected by
+  -- ClassicAPI. Keep the call to the three required arguments; race and
+  -- sex are optional and are not needed for class-color lookups.
+  if guid and class and C_PlayerCache and C_PlayerCache.RememberPlayer then
+    C_PlayerCache.RememberPlayer(guid, name, class)
   end
 end
 
